@@ -1,0 +1,28 @@
+QuickTasks — Version 1.1
+Date: 2026-11-18
+Status: RELEASED — synced to staging (8086) and pushed to GitHub (main + v1.0 tag moved).
+
+v1.1 changes (vs v1.0):
+  1) Team Points milestone badges (25/50/75/100%) using the free space between
+     points-left and points-right.
+     - New .points-middle div holds the badges in the middle column.
+     - 3-column grid (1fr 1fr 1fr): left / middle / right; the progress bar spans
+       full width below it (grid-column 1 / -1). Mobile (<760px) stacks cleanly.
+     - 25% lights at 30.8%; 50/75/100 dim until reached; 100% = golden crown.
+     - Badge lighting wired in renderPoints(); whole banner still hidden when goal=0.
+     - FIX (2026-11-18): badges were rendering on the RIGHT, not the middle — the
+       card was a 4-col grid (1.35fr 1fr auto 1fr) with points-middle pinned to col 3
+       (the auto slot). Corrected to 3 equal cols + points-middle auto-flowing to col 2.
+  2) Static / read-only fallback (carried from v1.0.1 so it is NOT regressed):
+     when api.php can't run (GitHub Pages, a static host, a downloaded copy), the UI
+     loads the committed JSON directly (boards.json + boards/*.json) and shows a
+     "read-only preview" banner instead of an empty board. On a real PHP host this
+     stays dormant and the live API is used exactly as before.
+
+Sync: dev (8085) -> staging (8086) on 2026-11-18; CODE ONLY
+      (index.html, css/style.css, VERSION). Data (boards/, boards.json, tasks.json)
+      NOT touched — kids own staging data.
+Rollback (see ~/Sites/):
+  - QuickTasks.staging.backup-v1.1-20261118-142106   = full copy of staging
+  - QuickTasks.staging.v1.0-pre-1.1-20261118-142106  = exact v1.0 code before this sync
+  - git: tag v1.0 -> c1ff572 (v1.0 + fallback); this release is HEAD of main.

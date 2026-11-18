@@ -33,20 +33,20 @@
           <span class="points-unit">pts</span>
           <span id="points-status" class="points-status"></span>
         </div>
-        <div class="points-miles" id="points-miles" aria-label="Milestone badges">
-          <div class="mile" data-m="25"><span class="ico">✓</span>25%</div>
-          <div class="mile" data-m="50"><span class="ico">✓</span>50%</div>
-          <div class="mile" data-m="75"><span class="ico">✓</span>75%</div>
-          <div class="mile mile-final" data-m="100"><span class="ico">👑</span>100%</div>
-        </div>
-        <div class="points-bar" title="This week's team points toward the goal">
-          <div class="points-fill" id="points-fill"></div>
-        </div>
+      </div>
+      <div class="points-middle" id="points-miles" aria-label="Milestone badges">
+        <div class="mile" data-m="25"><span class="ico">✓</span>25%</div>
+        <div class="mile" data-m="50"><span class="ico">✓</span>50%</div>
+        <div class="mile" data-m="75"><span class="ico">✓</span>75%</div>
+        <div class="mile mile-final" data-m="100"><span class="ico">👑</span>100%</div>
       </div>
       <div class="points-right">
         <div class="points-remaining" id="points-remaining"></div>
         <div class="points-countdown" id="points-countdown"></div>
         <div class="points-ends" id="points-ends"></div>
+      </div>
+      <div class="points-bar" title="This week's team points toward the goal">
+        <div class="points-fill" id="points-fill"></div>
       </div>
     </div>
   </section>
@@ -790,10 +790,11 @@
       fill.style.width = pct.toFixed(1) + "%";
       fill.classList.toggle("over", curR >= goalR);
 
-      // Milestone badges (25/50/75/100%): light each once the goal is reached.
+      // Milestone badges (25/50/75/100%) live in .points-middle; light each as
+      // its threshold is reached. The whole banner is already hidden when the
+      // goal is 0, so no separate hide is needed here.
       const miles = document.getElementById("points-miles");
       if (miles) {
-        miles.hidden = false;
         miles.querySelectorAll(".mile").forEach((m) => {
           const mark = Number(m.getAttribute("data-m"));
           m.classList.toggle("lit", pct >= mark);

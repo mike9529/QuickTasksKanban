@@ -64,7 +64,7 @@ a:hover { text-decoration: underline; }
 .points-banner[hidden] { display: none; }
 .points-card {
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 13px;
   align-items: center;
   background: linear-gradient(135deg, var(--panel-2), var(--panel));
@@ -74,6 +74,16 @@ a:hover { text-decoration: underline; }
   box-shadow: var(--shadow);
 }
 .points-left { min-width: 0; }
+/* Milestone badges live in the free space between left and right. */
+.points-middle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  grid-column: 2; grid-row: 1;
+}
+.points-middle[hidden] { display: none; }
 .points-label {
   font-size: 11px;
   font-weight: 700;
@@ -103,13 +113,42 @@ a:hover { text-decoration: underline; }
 .points-status.under { color: var(--pending); background: rgba(242,177,52,.12); border: 1px solid rgba(242,177,52,.35); }
 .points-status.over { color: var(--done); background: rgba(56,193,114,.14); border: 1px solid rgba(56,193,114,.4); }
 
+/* The bar spans the full width of the card (all three sections). */
 .points-bar {
+  grid-column: 1 / -1;
+  grid-row: 2;
   margin-top: 8px;
   height: 9px;
   background: var(--bg-soft);
   border: 1px solid var(--line);
   border-radius: 999px;
   overflow: hidden;
+}
+/* ---- Milestone badges (25/50/75/100%) inside .points-middle ---- */
+.mile {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 20px; padding: 0 8px; border-radius: 999px;
+  font-size: 10px; font-weight: 800; letter-spacing: .02em;
+  color: var(--muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+  opacity: .32;                 /* not-yet-achieved -> dim */
+  transition: opacity .3s ease, background .3s ease, box-shadow .3s ease, color .3s ease;
+}
+.mile .ico { font-size: 11px; line-height: 1; filter: grayscale(1); }
+.mile.lit { opacity: 1; color: #0f1220; border-color: transparent; }
+.mile.lit .ico { filter: none; }
+.mile[data-m="25"].lit, .mile[data-m="50"].lit {
+  background: var(--progress); box-shadow: 0 1px 6px rgba(91,141,239,.4);
+}
+.mile[data-m="75"].lit {
+  background: #f2b134; box-shadow: 0 1px 6px rgba(242,177,52,.45);
+}
+.mile.mile-final { padding: 0 9px; }
+.mile.mile-final.lit {
+  background: linear-gradient(135deg, #ffd54a, #ffb020); color: #3a2600;
+  box-shadow: 0 1px 10px rgba(255,180,32,.55); font-weight: 900;
 }
 .points-fill {
   height: 100%;
@@ -119,42 +158,6 @@ a:hover { text-decoration: underline; }
   transition: width .5s ease;
 }
 .points-fill.over { background: linear-gradient(90deg, var(--done), #2aa86a); }
-
-/* ---- Milestone badges (25/50/75/100%) — slim band between value line and the bar ---- */
-.points-miles {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 16px;
-  margin: 5px 0 2px;
-}
-.points-miles[hidden] { display: none; }
-.mile {
-  height: 100%;
-  display: inline-flex; align-items: center; gap: 3px;
-  padding: 0 7px; border-radius: 999px;
-  font-size: 9.5px; font-weight: 800; letter-spacing: .02em;
-  color: var(--muted);
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  font-variant-numeric: tabular-nums;
-  opacity: .32;                 /* not-yet-achieved -> dim */
-  transition: opacity .3s ease, background .3s ease, box-shadow .3s ease, color .3s ease;
-}
-.mile .ico { font-size: 10px; line-height: 1; filter: grayscale(1); }
-.mile.lit { opacity: 1; color: #0f1220; border-color: transparent; }
-.mile.lit .ico { filter: none; }
-.mile[data-m="25"].lit, .mile[data-m="50"].lit {
-  background: var(--progress); box-shadow: 0 1px 6px rgba(91,141,239,.4);
-}
-.mile[data-m="75"].lit {
-  background: #f2b134; box-shadow: 0 1px 6px rgba(242,177,52,.45);
-}
-.mile.mile-final { padding: 0 8px; }
-.mile.mile-final.lit {
-  background: linear-gradient(135deg, #ffd54a, #ffb020); color: #3a2600;
-  box-shadow: 0 1px 10px rgba(255,180,32,.55); font-weight: 900;
-}
 
 .points-right {
   display: flex;
@@ -181,6 +184,7 @@ a:hover { text-decoration: underline; }
 
 @media (max-width: 760px) {
   .points-card { grid-template-columns: 1fr; gap: 8px; }
+  .points-middle { grid-column: 1; grid-row: auto; justify-content: flex-start; }
   .points-right { border-left: none; padding-left: 0; text-align: left; border-top: 1px solid var(--line); padding-top: 8px; }
   .topbar { flex-wrap: wrap; justify-content: center; }
 }
