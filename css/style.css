@@ -725,3 +725,14 @@ footer.foot {
 @media (max-width: 560px) {
   .board { grid-template-columns: 1fr; }
 }
+
+/* Read-only preview banner (shown on static hosts where api.php can't run) */
+.readonly-banner {
+  background: #fff8e1;
+  border-bottom: 1px solid #f0d999;
+  color: #7a5c00;
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 8px 16px;
+  text-align: center;
+}

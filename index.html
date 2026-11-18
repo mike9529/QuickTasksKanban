@@ -97,6 +97,32 @@
     let currentBoard = DEFAULT_CONFIG.statuses ? "adults" : "adults";
 
     const apiUrl = (board) => "api.php?board=" + encodeURIComponent(board || currentBoard);
+
+    // ---- Static / read-only fallback -------------------------------------
+    // On a PHP-less host (GitHub Pages, a static file server, a downloaded copy)
+    // api.php can't run, so the live API returns 404/415. Instead of showing an
+    // empty board, load the committed JSON directly (boards.json + boards/*.json)
+    // and lock the UI read-only. On a real PHP host this flag stays false and the
+    // live API is used exactly as before.
+    let STATIC = false;
+    async function loadStatic(boardKey) {
+      const reg = await fetch("boards.json", { cache: "no-store" }).then(r => r.json());
+      const boards = reg.boards || [];
+      const keys = boards.map(b => b.key);
+      let key = keys.includes(boardKey) ? boardKey
+            : (reg.default && keys.includes(reg.default) ? reg.default : (keys[0] || "adults"));
+      const meta = boards.find(b => b.key === key) || {};
+      const board = await fetch("boards/" + encodeURIComponent(key) + ".json", { cache: "no-store" })
+        .then(r => r.json());
+      return {
+        key,
+        board: { key, name: meta.name || board.config?.name || key },
+        config: Object.assign({}, DEFAULT_CONFIG, board.config || {}),
+        tasks: board.tasks || [],
+        registry: { default: reg.default || key, boards },
+      };
+    }
+
     const statusLabel = (k) => STATUS_LABELS[k] || k;
     const boardParam = () => "?board=" + encodeURIComponent(currentBoard);
 
@@ -345,8 +371,20 @@
     }
 
     async function load() {
-      const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
-      const data = await res.json();
+      let data;
+      try {
+        const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        data = await res.json();
+      } catch (err) {
+        // PHP isn't running here (GitHub Pages / static host). Fall back to the
+        // committed JSON so the board still renders. Writes become read-only.
+        STATIC = true;
+        const s = await loadStatic(currentBoard);
+        currentBoard = s.key;
+        data = s;
+        showReadOnlyBanner();
+      }
       config = Object.assign({}, DEFAULT_CONFIG, data.config || {});
       tasks = data.tasks || [];
       buildStatuses();
@@ -354,6 +392,19 @@
       renderLog();
       renderPoints();
       document.title = "QuickTasks — " + (config.name || "Board");
+    }
+
+    // A small notice so a viewer on the static host knows edits won't stick.
+    let readOnlyBannerEl = null;
+    function showReadOnlyBanner() {
+      if (readOnlyBannerEl) return;
+      readOnlyBannerEl = document.createElement("div");
+      readOnlyBannerEl.className = "readonly-banner";
+      readOnlyBannerEl.textContent =
+        "\u2139 Read-only preview \u2014 this is the live showcase. To add or move tasks, open the full app on your network.";
+      document.body.insertBefore(readOnlyBannerEl, document.body.firstChild);
+      const add = document.getElementById("foot-add");
+      if (add) { add.textContent = "Add Task (live app)"; add.title = "Opens the live app on your network"; }
     }
 
     function fmtDate(s) {
@@ -437,6 +488,10 @@
     }
 
     async function moveTask(id, status, assignee) {
+      if (STATIC) {
+        alert("Read-only preview \u2014 task changes are only available in the live app.");
+        return;
+      }
       const t = tasks.find(x => x.id === id);
       if (!t) return;
       const prevStatus = t.status;
@@ -466,6 +521,10 @@
     }
 
     async function deleteTask(id) {
+      if (STATIC) {
+        alert("Read-only preview \u2014 task changes are only available in the live app.");
+        return;
+      }
       const r = await fetch(apiUrl(currentBoard) + "&id=" + encodeURIComponent(id), { method: "DELETE" });
       if (!r.ok) { alert("Could not delete task."); return; }
       tasks = tasks.filter(t => t.id !== id);
@@ -480,13 +539,21 @@
       const saved = localStorage.getItem("qt.board");
       let active = fromUrl || saved || "adults";
 
+      let registry;
       try {
         const res = await fetch("api.php?boards=1", { cache: "no-store" });
-        const data = await res.json();
-        const boards = data.boards || [];
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        registry = await res.json();
+      } catch (err) {
+        // Static host: pull the registry from the committed boards.json.
+        STATIC = true;
+        registry = (await loadStatic(active)).registry;
+      }
+      try {
+        const boards = registry.boards || [];
         const keys = boards.map(b => b.key);
         if (!keys.includes(active)) {
-          active = (data.default && keys.includes(data.default)) ? data.default : (keys[0] || "adults");
+          active = (registry.default && keys.includes(registry.default)) ? registry.default : (keys[0] || "adults");
         }
         currentBoard = active;
         switcherEl.innerHTML = boards.map(b =>
@@ -765,7 +832,9 @@
 
     bootstrap();
     // Refresh on the active board's configured interval so other tabs stay in sync.
+    // Skipped on the static/read-only host (no live API to poll).
     setInterval(() => {
+      if (STATIC) return;
       fetch(apiUrl(currentBoard), { cache: "no-store" })
         .then(r => r.json())
         .then(d => {
