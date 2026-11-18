@@ -1,0 +1,222 @@
+{
+    "config": {
+        "name": "Children",
+        "units": "minutes",
+        "durationOptions": [
+            5,
+            10,
+            15,
+            30,
+            45,
+            60
+        ],
+        "completedWindowDays": 2,
+        "pollMs": 15000,
+        "descMaxChars": 140,
+        "statuses": [
+            "Pending",
+            "InProgress",
+            "Halted",
+            "Completed"
+        ],
+        "workers": [
+            "Alex",
+            "Chris",
+            "Daddy",
+            "Mommy"
+        ],
+        "pointGoal": 10,
+        "logPruneDays": 30
+    },
+    "tasks": [
+        {
+            "id": "t0b9e2576957e",
+            "title": "Do one (1) iReady Math",
+            "description": "",
+            "duration": 30,
+            "status": "Completed",
+            "created": "2026-11-17T20:07:31+00:00",
+            "started": "2026-11-17T20:33:09+00:00",
+            "completed": "2026-11-17T20:33:42+00:00",
+            "assignee": "Chris"
+        },
+        {
+            "id": "tcba69c8ea5e8",
+            "title": "Do one (1) iReady Reading",
+            "description": "",
+            "duration": 45,
+            "status": "Pending",
+            "created": "2026-11-17T20:08:00+00:00",
+            "assignee": "Chris"
+        },
+        {
+            "id": "tf77a462e76b8",
+            "title": "15min jump rope",
+            "description": "",
+            "duration": 15,
+            "status": "Pending",
+            "created": "2026-11-17T20:17:39+00:00",
+            "assignee": "Chris"
+        },
+        {
+            "id": "tad72a50e7070",
+            "title": "5min jump rope",
+            "description": "",
+            "duration": 5,
+            "status": "Pending",
+            "created": "2026-11-17T20:17:46+00:00",
+            "assignee": "Alex"
+        },
+        {
+            "id": "td8be8907caa0",
+            "title": "Read 1/2 Flat Stanley book",
+            "description": "",
+            "duration": 45,
+            "status": "Completed",
+            "created": "2026-11-17T20:50:52+00:00",
+            "assignee": "Chris",
+            "started": "2026-11-17T21:22:09+00:00",
+            "completed": "2026-11-17T22:34:19+00:00"
+        },
+        {
+            "id": "taacde05c31ba",
+            "title": "Load Dishwasher",
+            "description": "",
+            "duration": 15,
+            "status": "Completed",
+            "created": "2026-11-17T22:41:53+00:00",
+            "started": "2026-11-18T00:37:16+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T00:51:26+00:00"
+        },
+        {
+            "id": "t3c1377ba22ca",
+            "title": "Finish Flat Stanley book",
+            "description": "",
+            "duration": 45,
+            "status": "Completed",
+            "created": "2026-11-17T23:21:36+00:00",
+            "assignee": "Chris",
+            "started": "2026-11-18T12:36:52+00:00",
+            "completed": "2026-11-18T13:34:01+00:00"
+        },
+        {
+            "id": "t6b6464fd410d",
+            "title": "Empty Dish Washer",
+            "description": "",
+            "duration": 10,
+            "status": "Completed",
+            "created": "2026-11-17T23:45:24+00:00",
+            "started": "2026-11-18T00:32:20+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T00:36:52+00:00"
+        },
+        {
+            "id": "tddfe9fe83828",
+            "title": "Check Castle",
+            "description": "** DOESN'T MATTER WHO'S CLOTHES, DISHES OR WRAPPERS ARE **\n- no socks or shorts on floor\n- no candy wrappers\n- no dirty dishes or glasses",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T00:13:36+00:00",
+            "started": "2026-11-18T00:26:29+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T00:28:05+00:00"
+        },
+        {
+            "id": "tb06bf97fa79f",
+            "title": "Floss",
+            "description": "",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T00:23:29+00:00",
+            "started": "2026-11-18T00:28:37+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T00:31:56+00:00"
+        },
+        {
+            "id": "tcef15d405a9c",
+            "title": "FREE Bonus - In Bed by 8:30",
+            "description": "",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T00:45:20+00:00",
+            "started": "2026-11-18T00:52:56+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T01:29:53+00:00"
+        },
+        {
+            "id": "tb285e27d1b81",
+            "title": "Make Bed In the Morning",
+            "description": "",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T00:47:00+00:00",
+            "assignee": "Alex",
+            "started": "2026-11-18T11:59:18+00:00",
+            "completed": "2026-11-18T12:00:56+00:00"
+        },
+        {
+            "id": "t7756bbfb74a7",
+            "title": "Make Bed in the Morning",
+            "description": "",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T00:48:16+00:00",
+            "assignee": "Chris",
+            "started": "2026-11-18T11:59:22+00:00",
+            "completed": "2026-11-18T12:02:46+00:00"
+        },
+        {
+            "id": "t8ef788902ecc",
+            "title": "Fill and pack water bottlr",
+            "description": "",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T12:03:49+00:00",
+            "assignee": "Alex",
+            "started": "2026-11-18T12:04:03+00:00",
+            "completed": "2026-11-18T12:09:20+00:00"
+        },
+        {
+            "id": "t3fad20545bbe",
+            "title": "Help lower Christmas boxes",
+            "description": "",
+            "duration": 10,
+            "status": "Completed",
+            "created": "2026-11-18T12:41:50+00:00",
+            "started": "2026-11-18T15:36:49+00:00",
+            "assignee": "Chris",
+            "completed": "2026-11-18T16:04:59+00:00"
+        },
+        {
+            "id": "t2e5fe5f4c271",
+            "title": "Do flat Stanley AR",
+            "description": "",
+            "duration": 10,
+            "status": "Completed",
+            "created": "2026-11-18T13:34:51+00:00",
+            "started": "2026-11-18T13:38:59+00:00",
+            "assignee": "Chris",
+            "completed": "2026-11-18T13:49:54+00:00"
+        },
+        {
+            "id": "t8e8a88a5c242",
+            "title": "Find sound effect for Completed Task",
+            "description": "The idea is to add a \"SATISFYING\" sound to hear once a task is dropped in completed.  Maybe applause?  Maybe bell ring? etc.",
+            "duration": 5,
+            "status": "Completed",
+            "created": "2026-11-18T13:55:04+00:00",
+            "started": "2026-11-18T14:50:42+00:00",
+            "assignee": "Alex",
+            "completed": "2026-11-18T14:50:58+00:00"
+        },
+        {
+            "id": "tbe98b899d2fb",
+            "title": "Empty Dishwasher",
+            "description": "",
+            "duration": 10,
+            "status": "Pending",
+            "created": "2026-11-18T16:05:06+00:00"
+        }
+    ]
+}

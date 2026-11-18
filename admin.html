@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuickTasks — Admin</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">Q</span>
+      <span>QuickTasks <span class="sub">admin</span></span>
+    </div>
+    <nav class="nav">
+      <div class="switcher" title="Switch between boards — each has its own tasks and settings">
+        <label for="board-switch">Switch Board:</label>
+        <select id="board-switch" aria-label="Switch board"></select>
+      </div>
+      <a href="index.html" id="nav-board">Board</a>
+      <a href="admin.html" class="active" id="nav-add">Add Task</a>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <div class="panel">
+      <h1 class="page-title" id="form-title">Add a task</h1>
+      <p class="lede" id="form-lede">A task is just a title and an effort estimate. It lands in <strong>Pending</strong> by default — drag it on the board to move it.</p>
+
+      <form id="task-form" autocomplete="off">
+        <input type="hidden" id="edit-id" value="" />
+
+        <label for="title">Title</label>
+        <input type="text" id="title" name="title" placeholder="e.g. Review the pull request" maxlength="500" required />
+
+        <label for="description">Description <span class="lede" style="font-weight:500" id="desc-limit">(optional, up to 140 characters)</span></label>
+        <textarea id="description" name="description" rows="3" maxlength="140" placeholder="Add a short note (shown via the > on the board)"></textarea>
+        <div class="charcount"><span id="desc-count">0</span><span id="desc-total">/140</span></div>
+
+        <div class="row">
+          <div>
+            <label for="days" id="days-label">Estimate</label>
+            <select id="days" name="days"><!-- options filled by JS from the board config --></select>
+          </div>
+          <div>
+            <label for="assignee" id="assignee-label">Assigned to</label>
+            <select id="assignee" name="assignee"><option value="">Unassigned</option></select>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn" id="btn-submit">Add task</button>
+          <a href="index.html" class="btn secondary" id="btn-cancel">Clear</a>
+          <a href="index.html" class="btn secondary" id="btn-board">View board →</a>
+        </div>
+        <div class="msg" id="msg" role="status" aria-live="polite"></div>
+      </form>
+    </div>
+
+    <div class="panel">
+      <h1 class="page-title">All tasks <span class="board-tag" id="board-tag"></span></h1>
+      <p class="lede">Stored locally in <code>boards/&lt;name&gt;.json</code> — no database.</p>
+      <div class="list" id="list"></div>
+    </div>
+  </main>
+
+  <footer class="foot">QuickTasks · local JSON store · <a href="index.html" id="foot-board">Board</a></footer>
+
+  <script>
+    const DEFAULT_CONFIG = {
+      units: "days",
+      durationOptions: [1, 2, 3, 4, 5],
+      completedWindowDays: 2,
+      pollMs: 15000,
+      descMaxChars: 140,
+      statuses: ["Pending", "InProgress", "Halted", "Completed"],
+    };
+
+    let config = Object.assign({}, DEFAULT_CONFIG);
+    let STATUSES = DEFAULT_CONFIG.statuses.slice();
+    let currentBoard = "adults";
+
+    const form = document.getElementById("task-form");
+    const msg = document.getElementById("msg");
+    const listEl = document.getElementById("list");
+    const switcherEl = document.getElementById("board-switch");
+    const daysEl = document.getElementById("days");
+    const daysLabelEl = document.getElementById("days-label");
+    const assigneeEl = document.getElementById("assignee");
+    const assigneeLabelEl = document.getElementById("assignee-label");
+    const descLimitEl = document.getElementById("desc-limit");
+    const descTotalEl = document.getElementById("desc-total");
+    const descCount = document.getElementById("desc-count");
+    const navBoard = document.getElementById("nav-board");
+    const navAdd = document.getElementById("nav-add");
+    const footBoard = document.getElementById("foot-board");
+    const boardTag = document.getElementById("board-tag");
+
+    const apiUrl = (board) => "api.php?board=" + encodeURIComponent(board || currentBoard);
+    const boardParam = () => "?board=" + encodeURIComponent(currentBoard);
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+    }
+
+    function unitWord(n) {
+      if (config.units === "minutes") return n === 1 ? "minute" : "minutes";
+      if (config.units === "hours")   return n === 1 ? "hour" : "hours";
+      return n === 1 ? "day" : "days";
+    }
+    function unitShort() {
+      if (config.units === "minutes") return "m";
+      if (config.units === "hours")   return "h";
+      return "d";
+    }
+
+    // Rebuild the estimate dropdown from the active board's durationOptions + units.
+    function buildDaysOptions() {
+      const opts = (config.durationOptions && config.durationOptions.length)
+        ? config.durationOptions
+        : DEFAULT_CONFIG.durationOptions;
+      daysEl.innerHTML = opts.map((o) =>
+        `<option value="${Number(o)}">${Number(o)} ${unitWord(Number(o))}</option>`
+      ).join("");
+      // Default selection: the board's first option.
+      daysEl.value = String(opts[0]);
+      daysLabelEl.textContent = config.units === "minutes"
+        ? "Time estimate"
+        : (config.units === "hours" ? "Hour estimate" : "Estimate");
+    }
+
+    // Rebuild the "Assigned to" dropdown from the board's workers list.
+    function buildAssigneeOptions() {
+      const workers = Array.isArray(config.workers) ? config.workers : [];
+      const cur = assigneeEl.value;
+      assigneeEl.innerHTML =
+        '<option value="">Unassigned</option>' +
+        workers.map((w) => `<option value="${esc(w)}">${esc(w)}</option>`).join("");
+      // Keep a previously selected worker if the board still offers it.
+      if (workers.includes(cur)) assigneeEl.value = cur;
+      // Hide the field when the board has no workers yet.
+      assigneeLabelEl.style.display = workers.length ? "" : "none";
+    }
+
+    // Apply a loaded board's config to the form (units, options, desc cap, statuses).
+    function applyConfig(cfg) {
+      config = Object.assign({}, DEFAULT_CONFIG, cfg || {});
+      STATUSES = (config.statuses && config.statuses.length)
+        ? config.statuses
+        : DEFAULT_CONFIG.statuses.slice();
+      buildDaysOptions();
+      buildAssigneeOptions();
+      const cap = config.descMaxChars || 140;
+      form.description.setAttribute("maxlength", String(cap));
+      descLimitEl.textContent = "(optional, up to " + cap + " characters)";
+      descTotalEl.textContent = "/" + cap;
+      document.title = "QuickTasks — " + (config.name || "Board") + " · admin";
+    }
+
+    function showMsg(text, ok) {
+      msg.textContent = text;
+      msg.className = "msg " + (ok ? "ok" : "err");
+      clearTimeout(showMsg._t);
+      showMsg._t = setTimeout(() => { msg.textContent = ""; }, 4000);
+    }
+
+    async function loadList() {
+      try {
+        const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
+        const data = await res.json();
+        applyConfig(data.config);
+        const tasks = data.tasks || [];
+        tasks.sort((a, b) => String(b.created || "").localeCompare(String(a.created || "")));
+        boardTag.textContent = "· " + (config.name || currentBoard);
+        listEl.innerHTML = "";
+        if (tasks.length === 0) {
+          listEl.innerHTML = '<p class="lede">No tasks yet.</p>';
+          return;
+        }
+        tasks.forEach((t) => {
+          const item = document.createElement("div");
+          item.className = "list-item";
+          const n = Number(t.duration != null ? t.duration : t.days) || 0;
+          item.innerHTML =
+            `<span class="l-title">${esc(t.title)}</span>
+             <span class="l-right">
+               <span class="chip" data-status="${esc(t.status)}">${esc(t.status)}</span>
+               <span class="days">🗓 ${n}${unitShort()}</span>
+               ${t.status === "Pending"
+                 ? '<a class="mini-edit" href="admin.html?id=' + encodeURIComponent(t.id) + '\u0026board=' + encodeURIComponent(currentBoard) + '" title="Edit">\u270e\uFE0F</a>'
+                 : '<span class="mini-edit locked" title="Locked — only Pending tasks can be edited">🔒</span>'}
+               <button class="mini-del" title="Delete">✕</button>
+             </span>`;
+          item.querySelector(".mini-del").addEventListener("click", async () => {
+            const r = await fetch(apiUrl(currentBoard) + "&id=" + encodeURIComponent(t.id), { method: "DELETE" });
+            if (!r.ok) { showMsg("Could not delete task.", false); return; }
+            showMsg("Deleted \u201c" + t.title + "\u201d.", true);
+            loadList();
+          });
+          // click the chip to cycle status
+          item.querySelector(".chip").addEventListener("click", async () => {
+            const i = STATUSES.indexOf(t.status);
+            const next = STATUSES[(i + 1) % STATUSES.length];
+            const r = await fetch(apiUrl(currentBoard), {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: t.id, status: next }),
+            });
+            if (!r.ok) { showMsg("Could not update status.", false); return; }
+            loadList();
+          });
+        });
+      } catch (err) {
+        listEl.innerHTML = '<p class="lede" style="color:var(--halted)">Could not reach the API: ' + esc(err.message) + '</p>';
+      }
+    }
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const title = form.title.value.trim();
+      if (!title) { showMsg("Title is required.", false); return; }
+      const id = editIdEl.value.trim();
+      const payload = {
+        title,
+        description: form.description.value.trim(),
+        duration: Number(daysEl.value),
+        assignee: assigneeEl.value,   // "" = unassigned; cleared server-side
+      };
+      // Editing prepopulates the task; creating always starts in Pending.
+      if (id) {
+        payload.id = id;
+      } else {
+        payload.status = "Pending";
+      }
+      const r = await fetch(apiUrl(currentBoard), {
+        method: id ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok) {
+        // Both add and edit send the user back to the board so they can see
+        // the change. Refresh the local list first in case the redirect is slow
+        // or the user cancels the navigation.
+        showMsg((id ? "Saved \u201c" : "Added \u201c") + title + "\u201d \u2014 opening the board\u2026", true);
+        form.reset();
+        descCount.textContent = "0";
+        buildDaysOptions();
+        exitEdit();
+        loadList();
+        setTimeout(() => { window.location.href = "index.html" + boardParam(); }, 500);
+      } else {
+        showMsg(data.error || (id ? "Could not save changes." : "Could not add task."), false);
+      }
+    });
+
+    // ---- Edit mode: same form, prepopulated from ?id ----
+    const editIdEl = document.getElementById("edit-id");
+    const formTitleEl = document.getElementById("form-title");
+    const formLedeEl = document.getElementById("form-lede");
+    const btnSubmit = document.getElementById("btn-submit");
+    const btnCancel = document.getElementById("btn-cancel");
+    const btnBoard = document.getElementById("btn-board");
+
+    function exitEdit() {
+      editIdEl.value = "";
+      formTitleEl.textContent = "Add a task";
+      formLedeEl.innerHTML = "A task is just a title and an effort estimate. It lands in <strong>Pending</strong> by default — drag it on the board to move it.";
+      btnSubmit.textContent = "Add task";
+      btnCancel.textContent = "Clear";
+      btnCancel.href = "#";              // in add mode "Clear" just resets the form
+      btnCancel.onclick = (ev) => { ev.preventDefault(); form.reset(); descCount.textContent = "0"; buildAssigneeOptions(); };
+      btnBoard.href = "index.html" + boardParam();
+    }
+
+    function enterEdit(task) {
+      editIdEl.value = task.id;
+      form.title.value = task.title || "";
+      form.description.value = task.description || "";
+      buildAssigneeOptions();
+      assigneeEl.value = task.assignee || "";
+      const d = Number(task.duration != null ? task.duration : task.days);
+      // Pick the stored value if the board offers it, else the nearest option.
+      const opts = (config.durationOptions && config.durationOptions.length)
+        ? config.durationOptions
+        : DEFAULT_CONFIG.durationOptions;
+      if (d && opts.includes(d)) {
+        daysEl.value = String(d);
+      } else {
+        buildDaysOptions();
+      }
+      descCount.textContent = form.description.value.length;
+      formTitleEl.textContent = "Edit task";
+      formLedeEl.innerHTML = "Editing <strong>\u201c" + esc(task.title) + "\u201d</strong> \u2014 the other fields are left as-is; save to update.";
+      btnSubmit.textContent = "Save changes";
+      btnCancel.textContent = "Cancel";
+      btnCancel.href = "index.html" + boardParam();     // cancel goes back to the board
+      btnCancel.onclick = null;
+      btnBoard.href = "index.html" + boardParam();
+      form.title.focus();
+    }
+
+    async function startEditFromUrl() {
+      const id = new URLSearchParams(location.search).get("id");
+      if (!id) { exitEdit(); return; }
+      try {
+        const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
+        const data = await res.json();
+        applyConfig(data.config);
+        const t = (data.tasks || []).find(x => x.id === id);
+        if (!t) {
+          showMsg("Task not found (it may have been deleted).", false);
+          exitEdit();
+          return;
+        }
+        // Edit is allowed ONLY for Pending tasks. Once a task has started or
+        // moved to any other status, its content is locked.
+        if (t.status !== "Pending") {
+          showMsg("\u201c" + t.title + "\u201d is locked — only Pending tasks can be edited (status: " + t.status + ").", false);
+          exitEdit();
+          return;
+        }
+        enterEdit(t);
+        window.scrollTo(0, 0);
+      } catch (err) {
+        showMsg("Could not load task for editing: " + err.message, false);
+      }
+    }
+
+    // ---- Board switcher ------------------------------------------------------
+    async function initSwitcher() {
+      // Which board is active? URL wins, then the last one you picked, then the default.
+      const params = new URLSearchParams(location.search);
+      const fromUrl = params.get("board");
+      const saved = localStorage.getItem("qt.board");
+      let active = fromUrl || saved || "adults";
+
+      try {
+        const res = await fetch("api.php?boards=1", { cache: "no-store" });
+        const data = await res.json();
+        const boards = data.boards || [];
+        const keys = boards.map(b => b.key);
+        if (!keys.includes(active)) {
+          active = (data.default && keys.includes(data.default)) ? data.default : (keys[0] || "adults");
+        }
+        currentBoard = active;
+        switcherEl.innerHTML = boards.map(b =>
+          `<option value="${esc(b.key)}">${esc(b.name)}</option>`
+        ).join("");
+        switcherEl.value = currentBoard;
+
+        switcherEl.addEventListener("change", () => {
+          currentBoard = switcherEl.value;
+          localStorage.setItem("qt.board", currentBoard);
+          // Full reload so the new board's config + tasks load cleanly.
+          const url = new URL(location.href);
+          url.searchParams.set("board", currentBoard);
+          location.href = url.pathname + url.search;
+        });
+      } catch (err) {
+        switcherEl.innerHTML = `<option value="adults">Adults</option>`;
+        currentBoard = "adults";
+      }
+
+      // Point the board / add links at the active board.
+      navBoard.href = "index.html" + boardParam();
+      footBoard.href = "index.html" + boardParam();
+      navAdd.href = "admin.html" + boardParam();
+    }
+
+    async function bootstrap() {
+      await initSwitcher();
+      await loadList();
+      startEditFromUrl();
+    }
+
+    // Live 0/cap character counter for the description field.
+    form.description.addEventListener("input", () => {
+      descCount.textContent = form.description.value.length;
+    });
+
+    bootstrap();
+    // Refresh on the active board's configured interval so other tabs stay in sync.
+    setInterval(loadList, 15000);
+  </script>
+</body>
+</html>

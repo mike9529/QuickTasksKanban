@@ -1,0 +1,9 @@
+# OS / editor junk
+.DS_Store
+Thumbs.db
+
+# api.php atomic-write temp files (temp + rename); should never be committed
+*.tmp-*
+
+# local-only notes / scratch that don't belong in the release
+*.local.md

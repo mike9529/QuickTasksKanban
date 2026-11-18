@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>QuickTasks — Board</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">Q</span>
+      <span>QuickTasks <span class="sub">kanban</span></span>
+    </div>
+    <nav class="nav">
+      <div class="switcher" title="Switch between boards — each has its own tasks and settings">
+        <label for="board-switch">Switch Board:</label>
+        <select id="board-switch" aria-label="Switch board"></select>
+      </div>
+      <a href="index.html" class="active" id="nav-board">Board</a>
+      <a href="admin.html" id="nav-add">Add Task</a>
+    </nav>
+  </header>
+
+  <section class="points-banner" id="points" aria-label="Team points this week">
+    <div class="points-card">
+      <div class="points-left">
+        <div class="points-label">⚡ Team Points · This Week</div>
+        <div class="points-value">
+          <span id="points-current">0.00</span>
+          <span class="points-sep">/</span>
+          <span id="points-goal">3.00</span>
+          <span class="points-unit">pts</span>
+          <span id="points-status" class="points-status"></span>
+        </div>
+        <div class="points-miles" id="points-miles" aria-label="Milestone badges">
+          <div class="mile" data-m="25"><span class="ico">✓</span>25%</div>
+          <div class="mile" data-m="50"><span class="ico">✓</span>50%</div>
+          <div class="mile" data-m="75"><span class="ico">✓</span>75%</div>
+          <div class="mile mile-final" data-m="100"><span class="ico">👑</span>100%</div>
+        </div>
+        <div class="points-bar" title="This week's team points toward the goal">
+          <div class="points-fill" id="points-fill"></div>
+        </div>
+      </div>
+      <div class="points-right">
+        <div class="points-remaining" id="points-remaining"></div>
+        <div class="points-countdown" id="points-countdown"></div>
+        <div class="points-ends" id="points-ends"></div>
+      </div>
+    </div>
+  </section>
+
+  <main class="board" id="board" aria-label="Task board">
+    <!-- Columns are rendered by JS from the active board's config -->
+  </main>
+
+  <section class="log" aria-label="Completed items log">
+    <div class="log-head">
+      <h2>Completed items</h2>
+      <span class="hint" id="log-hint">Worked = completed − started · green on/under estimate, red over</span>
+    </div>
+    <div id="log">
+      <p class="log-empty">No completed items yet.</p>
+    </div>
+  </section>
+
+  <footer class="foot">
+    Drag a card between columns to change its status ·
+    <a href="admin.html" id="foot-add">Add Task</a>
+  </footer>
+
+  <script>
+    // ---- Board switching -----------------------------------------------------
+    // Each board is its own JSON file (boards/<key>.json) with a `config`
+    // block (units, allowed durations, completed window, poll, statuses) plus
+    // its `tasks`. The registry (boards.json, via ?boards=1) lists the boards.
+    const DEFAULT_CONFIG = {
+      units: "days",
+      durationOptions: [1, 2, 3, 4, 5],
+      completedWindowDays: 2,
+      pollMs: 15000,
+      descMaxChars: 140,
+      statuses: ["Pending", "InProgress", "Halted", "Completed"],
+    };
+    const DEFAULT_STATUSES = DEFAULT_CONFIG.statuses;
+    const STATUS_LABELS = {
+      Pending: "Pending",
+      InProgress: "In Progress",
+      Halted: "Halted",
+      Completed: "Completed",
+    };
+
+    let config = Object.assign({}, DEFAULT_CONFIG);
+    let STATUSES = [];
+    let tasks = [];
+    let currentBoard = DEFAULT_CONFIG.statuses ? "adults" : "adults";
+
+    const apiUrl = (board) => "api.php?board=" + encodeURIComponent(board || currentBoard);
+    const statusLabel = (k) => STATUS_LABELS[k] || k;
+    const boardParam = () => "?board=" + encodeURIComponent(currentBoard);
+
+    // ---- Auto-scroll on drag -----------------------------------------------
+    // The signal: the dragged card LEAVING its own column -- the moment its
+    // source column's highlight disappears. A card can't enter a different
+    // column's highlight if that column is scrolled off-screen, so we watch
+    // the pointer instead: when the live drag position is no longer over the
+    // source column, scroll the page smoothly back to the top so the other
+    // buckets are visible for the drop. One-shot per drag.
+    let scrollRAF = null;
+    let activeSourceCol = null;
+    let leftSource = false;
+
+    function startAutoScrollToTop() {
+      // A scroll is already running -- leave it; it will finish to the top.
+      if (scrollRAF) return;
+      const step = () => {
+        const y = window.scrollY || document.documentElement.scrollTop;
+        if (y <= 1) {                      // reached the top -> stop
+          window.scrollTo(0, 0);
+          scrollRAF = null;
+          return;
+        }
+        const next = y - Math.max(6, Math.ceil(y * 0.14)); // ease-out
+        window.scrollTo(0, next);
+        scrollRAF = requestAnimationFrame(step);
+      };
+      scrollRAF = requestAnimationFrame(step);
+    }
+
+    function stopAutoScroll() {
+      if (scrollRAF) {
+        cancelAnimationFrame(scrollRAF);
+        scrollRAF = null;
+      }
+    }
+
+    document.addEventListener("dragover", (e) => {
+      if (!activeSourceCol || leftSource) return;
+      const r = activeSourceCol.getBoundingClientRect();
+      const inside =
+        e.clientX >= r.left && e.clientX <= r.right &&
+        e.clientY >= r.top  && e.clientY <= r.bottom;
+      if (!inside) {
+        leftSource = true;                 // highlight of the source just left
+        startAutoScrollToTop();
+      }
+    });
+    // -----------------------------------------------------------------------
+
+    const board = document.getElementById("board");
+    const switcherEl = document.getElementById("board-switch");
+
+    function esc(s) {
+      return String(s).replace(/[&<>"']/g, c => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+    }
+
+    function buildStatuses() {
+      STATUSES = (config.statuses && config.statuses.length
+        ? config.statuses
+        : DEFAULT_STATUSES
+      ).map((k) => ({ key: k, label: statusLabel(k) }));
+    }
+
+    // A completed card sits in the Completed column for the board's configured
+    // window, then it lives on in the "Completed items" log only.
+    function inCompletedWindow(t, now) {
+      const ref = t.completed || t.created;
+      if (!ref) return true; // no timestamp -> keep visible rather than hide
+      const win = (config.completedWindowDays || 2) * 86400000;
+      return now - new Date(ref).getTime() <= win;
+    }
+
+    // Units-aware estimate badge: "🗓 3 days" for a days board, "⏱ 30 minutes" for
+    // a minutes board.
+    function unitWord(n) {
+      if (config.units === "minutes") return n === 1 ? "minute" : "minutes";
+      if (config.units === "hours")   return n === 1 ? "hour" : "hours";
+      return n === 1 ? "day" : "days";
+    }
+    function durationBadge(d) {
+      const n = Number(d) || 0;
+      const icon = config.units === "minutes" ? "⏱" : (config.units === "hours" ? "🕒" : "🗓");
+      return `<span class="days">${icon} ${n} ${unitWord(n)}</span>`;
+    }
+
+    function render() {
+      board.innerHTML = "";
+      const now = Date.now();
+      STATUSES.forEach((s) => {
+        let inStatus = tasks.filter(t => t.status === s.key);
+        // Completed column shows only the configured window; older ones move to the log.
+        if (s.key === "Completed") {
+          inStatus = inStatus.filter(t => inCompletedWindow(t, now));
+        }
+        const col = document.createElement("section");
+        col.className = "column";
+        col.dataset.status = s.key;
+
+        const headLabel = s.key === "Completed"
+          ? `Completed · last ${config.completedWindowDays || 2} day${(config.completedWindowDays || 2) === 1 ? "" : "s"}`
+          : s.label;
+        col.innerHTML =
+          `<div class="col-head">
+             <span><span class="dot"></span>${esc(headLabel)}</span>
+             <span class="count">${inStatus.length}</span>
+           </div>
+           <div class="col-body"></div>`;
+
+        const body = col.querySelector(".col-body");
+        if (inStatus.length === 0) {
+          const hint = document.createElement("div");
+          hint.className = "empty-hint";
+          const olderCompleted = tasks.some(t => t.status === "Completed" && !inCompletedWindow(t, now));
+          hint.textContent = (s.key === "Completed" && olderCompleted)
+            ? "No recent completions — older items are in the log below"
+            : "Drop tasks here";
+          body.appendChild(hint);
+        }
+        inStatus.forEach((t) => body.appendChild(makeCard(t)));
+
+        // Drop handling on the column.
+        col.addEventListener("dragover", (e) => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = "move";
+          col.classList.add("drop-hover");
+        });
+        col.addEventListener("dragleave", () => col.classList.remove("drop-hover"));
+        col.addEventListener("drop", async (e) => {
+          e.preventDefault();
+          col.classList.remove("drop-hover");
+          const id = e.dataTransfer.getData("text/plain");
+          if (!id) return;
+          const t = tasks.find(x => x.id === id);
+          // Dropping a Pending task into In Progress asks who's doing it -- but
+          // ONLY if it isn't already assigned. An already-assigned task just moves
+          // (carrying its worker), no prompt.
+          if (t && t.status === "Pending" && s.key === "InProgress" && !t.assignee) {
+            await openAssigneeModal(id, "InProgress");
+            return;
+          }
+          await moveTask(id, s.key);
+        });
+
+        board.appendChild(col);
+      });
+    }
+
+    function makeCard(t) {
+      const card = document.createElement("article");
+      card.className = "card";
+      card.draggable = true;
+      card.dataset.id = t.id;
+      const hasDesc = !!(t.description && String(t.description).trim());
+      // Assignee tag: shown for any active task (so you always see who owns it),
+      // or for a Pending task that already has a worker. Tapping it reassigns.
+      const assignee = t.assignee || "";
+      const showAssignee = assignee || t.status !== "Pending";
+      const assigneeTag = showAssignee
+        ? `<div class="assignee ${assignee ? "assigned" : "unassigned"}" data-id="${esc(t.id)}" title="${assignee ? "Assigned to " + esc(assignee) + " \u2014 tap to change" : "Unassigned \u2014 tap to assign"}"><span class="assignee-name">${assignee ? esc(assignee) : "Unassigned"}</span></div>`
+        : "";
+      card.innerHTML =
+        `${assigneeTag}
+         <div class="title">${esc(t.title)}</div>
+         ${hasDesc ? `<button class="desc-toggle" title="Show description" aria-label="Show description">&gt;</button>` : ""}
+         ${hasDesc ? `<div class="desc" hidden>${esc(t.description)}</div>` : ""}
+         <div class="meta">
+           ${durationBadge(t.duration != null ? t.duration : t.days)}
+           <span class="meta-actions">
+             ${t.status === "Pending"
+               ? '<button class="edit" title="Edit task" aria-label="Edit task">✎</button>'
+               : '<span class="edit locked" title="Locked — only Pending tasks can be edited" aria-label="Locked">🔒</span>'}
+             <button class="del" title="Delete task" aria-label="Delete task">✕</button>
+           </span>
+         </div>`;
+
+      // Edit pencil -> the admin edit view, prepopulated with this task's id
+      // and the current board. Only Pending tasks can be edited; anything else
+      // shows a lock instead. NOTE: boardParam() begins with '?', so build the
+      // query with & after the id (not a second ?), or the id gets corrupted.
+      const editEl = card.querySelector(".edit");
+      if (editEl && t.status === "Pending" && editEl.tagName === "BUTTON") {
+        editEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          window.location.href = "admin.html?id=" + encodeURIComponent(t.id) + "&board=" + encodeURIComponent(currentBoard);
+        });
+        editEl.addEventListener("dragstart", (e) => e.stopPropagation());
+      }
+
+      // The ">" toggle shows/hides the description without starting a drag.
+      const toggle = card.querySelector(".desc-toggle");
+      if (toggle) {
+        toggle.addEventListener("click", (e) => {
+          e.stopPropagation();
+          const d = card.querySelector(".desc");
+          if (!d) return;
+          d.hidden = !d.hidden;
+          toggle.textContent = d.hidden ? "\u003e" : "\u25be"; // > when collapsed, ▾ when open
+          toggle.title = d.hidden ? "Show description" : "Hide description";
+        });
+        toggle.addEventListener("dragstart", (e) => e.stopPropagation());
+      }
+
+      // Drag lifecycle: record this card's source column. The document-level
+      // dragover watcher (above) starts the smooth scroll the moment the
+      // pointer leaves that column's bounds -- i.e. when its highlight would
+      // disappear -- so the other columns scroll into view for the drop.
+      card.addEventListener("dragstart", (e) => {
+        e.dataTransfer.setData("text/plain", t.id);
+        e.dataTransfer.effectAllowed = "move";
+        card.classList.add("dragging");
+        activeSourceCol = card.closest(".column");
+        leftSource = false;
+        stopAutoScroll();
+      });
+      card.addEventListener("dragend", () => {
+        card.classList.remove("dragging");
+        stopAutoScroll();
+        activeSourceCol = null;
+        leftSource = false;
+      });
+
+      card.querySelector(".del").addEventListener("click", async (e) => {
+        e.stopPropagation();
+        // Guard the permanent delete with a confirm modal.
+        if (await confirmDelete(t)) await deleteTask(t.id);
+      });
+
+      // Tapping the assignee tag opens the worker picker to reassign. It must not
+      // start a card drag or trigger the delete/edit handlers, so stop everything.
+      const assigneeEl = card.querySelector(".assignee");
+      if (assigneeEl) {
+        assigneeEl.addEventListener("click", (e) => {
+          e.stopPropagation();
+          // Reassigning keeps the task in its CURRENT column -- pass its live
+          // status as the target so a tag tap never moves it elsewhere.
+          const tt = tasks.find(x => x.id === t.id) || t;
+          openAssigneeModal(t.id, tt.status);
+        });
+        assigneeEl.addEventListener("dragstart", (e) => e.stopPropagation());
+      }
+      return card;
+    }
+
+    async function load() {
+      const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
+      const data = await res.json();
+      config = Object.assign({}, DEFAULT_CONFIG, data.config || {});
+      tasks = data.tasks || [];
+      buildStatuses();
+      render();
+      renderLog();
+      renderPoints();
+      document.title = "QuickTasks — " + (config.name || "Board");
+    }
+
+    function fmtDate(s) {
+      if (!s) return "—";
+      const d = new Date(s);
+      if (isNaN(d)) return "—";
+      return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    // Elapsed time from started to completed, in the board's own units
+    // (minutes board -> minutes; days board -> whole calendar days).
+    function workedInUnits(started, completed) {
+      if (!started || !completed) return null;
+      const ms = new Date(completed) - new Date(started);
+      if (isNaN(ms)) return null;
+      if (config.units === "minutes") return Math.max(0, Math.ceil(ms / 60000));
+      if (config.units === "hours")   return Math.max(0, Math.ceil(ms / 3600000));
+      return Math.max(0, Math.ceil(ms / 86400000));
+    }
+    function unitShort() {
+      if (config.units === "minutes") return "m";
+      if (config.units === "hours")   return "h";
+      return "d";
+    }
+    function unitHeader() {
+      if (config.units === "minutes") return "Minutes worked";
+      if (config.units === "hours")   return "Hours worked";
+      return "Days worked";
+    }
+
+    function renderLog() {
+      const el = document.getElementById("log");
+      const hint = document.getElementById("log-hint");
+      if (hint) {
+        hint.textContent = `${unitHeader()} = completed − started · green on/under estimate, red over`;
+      }
+      const done = tasks
+        .filter(t => t.status === "Completed")
+        .sort((a, b) => String(b.completed || b.created || "").localeCompare(String(a.completed || a.created || "")));
+
+      if (done.length === 0) {
+        el.innerHTML = '<p class="log-empty">No completed items yet.</p>';
+        return;
+      }
+
+      const rows = done.map((t) => {
+        const est = Number(t.duration != null ? t.duration : t.days) || 0;
+        const dw = workedInUnits(t.started, t.completed);
+        const u = unitShort();
+        let cls, val, cmp;
+        if (dw === null) {
+          cls = "days-na"; val = "—"; cmp = "";
+        } else if (dw <= est) {
+          cls = "days-ok"; val = String(dw) + u; cmp = " / est " + est + u;
+        } else {
+          cls = "days-over"; val = String(dw) + u; cmp = " / est " + est + u;
+        }
+        return `
+          <tr>
+            <td class="c-title">${esc(t.title)}</td>
+            <td class="c-date">${fmtDate(t.created)}</td>
+            <td class="c-date">${fmtDate(t.started)}</td>
+            <td class="c-date">${fmtDate(t.completed)}</td>
+            <td class="c-num"><span class="days-cell ${cls}">${val}<span class="est">${cmp}</span></span></td>
+          </tr>`;
+      }).join("");
+
+      el.innerHTML =
+        `<table class="log-table">
+           <thead>
+             <tr>
+               <th>Title</th>
+               <th>Added</th>
+               <th>Started</th>
+               <th>Completed</th>
+               <th>${esc(unitHeader())}</th>
+             </tr>
+           </thead>
+           <tbody>${rows}</tbody>
+         </table>`;
+    }
+
+    async function moveTask(id, status, assignee) {
+      const t = tasks.find(x => x.id === id);
+      if (!t) return;
+      const prevStatus = t.status;
+      const prevAssignee = t.assignee;
+      const changingStatus = status !== undefined && status !== null && t.status !== status;
+      const changingAssignee = assignee !== undefined && (assignee || null) !== (t.assignee || null);
+      if (!changingStatus && !changingAssignee) return; // nothing to do
+      if (changingStatus) t.status = status;              // optimistic
+      if (changingAssignee) t.assignee = assignee || null;
+      render();
+      try {
+        const body = { id };
+        if (changingStatus) body.status = status;
+        if (changingAssignee) body.assignee = assignee || ""; // "" clears server-side
+        const r = await fetch(apiUrl(currentBoard), {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        if (!r.ok) throw new Error("PATCH failed " + r.status);
+      } catch (err) {
+        t.status = prevStatus; // roll back on failure
+        t.assignee = prevAssignee;
+        render();
+        alert("Could not update task: " + err.message);
+      }
+    }
+
+    async function deleteTask(id) {
+      const r = await fetch(apiUrl(currentBoard) + "&id=" + encodeURIComponent(id), { method: "DELETE" });
+      if (!r.ok) { alert("Could not delete task."); return; }
+      tasks = tasks.filter(t => t.id !== id);
+      render();
+    }
+
+    // ---- Board switcher ------------------------------------------------------
+    async function initSwitcher() {
+      // Which board is active? URL wins, then the last one you picked, then the registry default.
+      const params = new URLSearchParams(location.search);
+      const fromUrl = params.get("board");
+      const saved = localStorage.getItem("qt.board");
+      let active = fromUrl || saved || "adults";
+
+      try {
+        const res = await fetch("api.php?boards=1", { cache: "no-store" });
+        const data = await res.json();
+        const boards = data.boards || [];
+        const keys = boards.map(b => b.key);
+        if (!keys.includes(active)) {
+          active = (data.default && keys.includes(data.default)) ? data.default : (keys[0] || "adults");
+        }
+        currentBoard = active;
+        switcherEl.innerHTML = boards.map(b =>
+          `<option value="${esc(b.key)}">${esc(b.name)}</option>`
+        ).join("");
+        switcherEl.value = currentBoard;
+
+        switcherEl.addEventListener("change", () => {
+          currentBoard = switcherEl.value;
+          localStorage.setItem("qt.board", currentBoard);
+          // Full reload so the new board's config + tasks load cleanly.
+          const url = new URL(location.href);
+          url.searchParams.set("board", currentBoard);
+          location.href = url.pathname + url.search;
+        });
+      } catch (err) {
+        // No registry / API down: keep the default board name, single option.
+        switcherEl.innerHTML = `<option value="adults">Adults</option>`;
+        currentBoard = "adults";
+      }
+
+      // Point the nav / footer "Add Task" links at the active board so the
+      // admin form adds to the right board.
+      document.getElementById("nav-add").href = "admin.html" + boardParam();
+      document.getElementById("foot-add").href = "admin.html" + boardParam();
+      document.getElementById("nav-board").href = "index.html" + boardParam();
+    }
+
+    // ---- Assignee (worker) modal -------------------------------------------
+    // A quick "who's doing this?" picker shown when a Pending task is dropped
+    // into In Progress, and when tapping an existing card's assignee tag.
+    // Buttons = one per worker on the current board (from config.workers).
+    let assigneeResolve = null; // resolve() for the in-flight picker
+    function openAssigneeModal(taskId, targetStatus) {
+      const t = tasks.find(x => x.id === taskId);
+      if (!t) return Promise.resolve();
+      const workers = Array.isArray(config.workers) ? config.workers.slice() : [];
+      // No workers configured for this board: nothing to pick, just move it.
+      if (workers.length === 0) {
+        return Promise.resolve().then(() => moveTask(taskId, targetStatus || "InProgress"));
+      }
+      ensureModalMarkup();
+      const modal = document.getElementById("assignee-modal");
+      const grid = document.getElementById("assignee-grid");
+      const title = document.getElementById("assignee-title");
+      const close = document.getElementById("assignee-cancel");
+      const cur = t.assignee || "";
+      title.innerHTML = "Who is doing <strong>\u201c" + esc(t.title) + "\u201d</strong>?";
+      grid.innerHTML = workers.map((w) =>
+        `<button type="button" class="assignee-btn${cur === w ? " current" : ""}" data-worker="${esc(w)}">${esc(w)}${cur === w ? " \u2713" : ""}</button>`
+      ).join("");
+      modal.classList.add("open");
+
+      const cleanup = () => {
+        modal.classList.remove("open");
+        document.removeEventListener("keydown", onKey);
+        assigneeResolve = null;
+      };
+      const pick = (worker) => {
+        const resolve = assigneeResolve;
+        cleanup();
+        // Picking a worker STARTS the task: move it to the target status and
+        // attach the worker in one PATCH.
+        moveTask(taskId, targetStatus || "InProgress", worker);
+        if (resolve) resolve(worker);
+      };
+      const cancel = () => {
+        const resolve = assigneeResolve;
+        cleanup();
+        // Cancelled -> don't start it; leave the task where it was (Pending).
+        if (resolve) resolve(null);
+      };
+      grid.querySelectorAll(".assignee-btn").forEach((btn) =>
+        btn.addEventListener("click", () => pick(btn.dataset.worker))
+      );
+      close.onclick = cancel;
+      modal.onclick = (e) => { if (e.target === modal) cancel(); };
+      const onKey = (e) => { if (e.key === "Escape") cancel(); };
+      document.addEventListener("keydown", onKey);
+
+      return new Promise((resolve) => { assigneeResolve = resolve; });
+    }
+
+    function ensureModalMarkup() {
+      if (document.getElementById("assignee-modal")) return;
+      const m = document.createElement("div");
+      m.className = "assignee-overlay";
+      m.id = "assignee-modal";
+      m.innerHTML =
+        `<div class="assignee-card" role="dialog" aria-modal="true" aria-labelledby="assignee-title">
+           <h2 id="assignee-title" class="assignee-h">Who is doing this?</h2>
+           <div class="assignee-grid" id="assignee-grid"></div>
+           <div class="assignee-actions">
+             <button type="button" class="btn secondary" id="assignee-cancel">Cancel</button>
+           </div>
+         </div>`;
+      document.body.appendChild(m);
+    }
+
+    // ---- Delete-confirm modal ------------------------------------------
+    // Guards the permanent delete on a card's X with an explicit yes/no.
+    // Reuses the assignee overlay + card styling so it looks like the house
+    // dialog; adds a destructive (red) confirm button.
+    function confirmDelete(t) {
+      ensureDeleteModalMarkup();
+      const modal = document.getElementById("delete-modal");
+      const title = document.getElementById("delete-title");
+      const ok = document.getElementById("delete-yes");
+      const no = document.getElementById("delete-no");
+      title.innerHTML = "Are you sure you want to delete task: <strong>\u201c" + esc(t.title) + "\u201d</strong>?";
+      modal.classList.add("open");
+
+      let settled = false;
+      let resolve = () => {};
+      const finish = (result) => {
+        if (settled) return;
+        settled = true;
+        modal.classList.remove("open");
+        document.removeEventListener("keydown", onKey);
+        resolve(result);
+      };
+      const onKey = (e) => { if (e.key === "Escape") finish(false); };
+      document.addEventListener("keydown", onKey);
+      ok.onclick = () => finish(true);
+      no.onclick = () => finish(false);
+      modal.onclick = (e) => { if (e.target === modal) finish(false); };
+      // Focus the cancel button so a stray Enter can't delete by accident.
+      no.focus();
+
+      return new Promise((r) => { resolve = r; });
+    }
+
+    function ensureDeleteModalMarkup() {
+      if (document.getElementById("delete-modal")) return;
+      const m = document.createElement("div");
+      m.className = "assignee-overlay";
+      m.id = "delete-modal";
+      m.innerHTML =
+        `<div class="assignee-card" role="dialog" aria-modal="true" aria-labelledby="delete-title">
+           <h2 id="delete-title" class="assignee-h"></h2>
+           <div class="assignee-actions" style="gap:10px;justify-content:center">
+             <button type="button" class="btn secondary" id="delete-no">No, Go Back</button>
+             <button type="button" class="btn danger" id="delete-yes">Yes, Delete</button>
+           </div>
+         </div>`;
+      document.body.appendChild(m);
+    }
+
+    async function bootstrap() {
+      await initSwitcher();
+      await load();
+      startPointsTimer();
+    }
+
+    // ---- Team points -------------------------------------------------------
+    // One point per hour of tasks done, aggregated across the whole team
+    // (no per-person scores, so nobody competes). A task's hours = its
+    // duration, converted to the board's units (minutes/60, hours as-is,
+    // days*24). Only tasks COMPLETED this week count. The week window runs
+    // Monday 00:01 -> Sunday 23:59 in the viewer's local time. The weekly
+    // target lives in config.pointGoal; 0 (or unset) hides the whole thing.
+    let pointsTimer = null;
+
+    function weekBounds(now) {
+      const d = new Date(now);
+      const dow = d.getDay();                 // 0=Sun .. 6=Sat
+      const diffToMon = (dow + 6) % 7;        // days since Monday
+      const start = new Date(d);
+      start.setDate(d.getDate() - diffToMon);
+      start.setHours(0, 1, 0, 0);            // Monday 12:01 AM
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
+      end.setHours(23, 59, 59, 999);         // Sunday 11:59 PM
+      return { start, end };
+    }
+
+    function durationToHours(t) {
+      const d = Number(t.duration != null ? t.duration : t.days) || 0;
+      if (config.units === "minutes") return d / 60;
+      if (config.units === "hours")   return d;
+      return d * 24;                          // days
+    }
+
+    function computeWeekPoints(now) {
+      const { start, end } = weekBounds(now);
+      const lo = start.getTime(), hi = end.getTime();
+      let hours = 0;
+      tasks.forEach((t) => {
+        if (t.status !== "Completed") return;
+        const ref = t.completed || t.created;
+        if (!ref) return;
+        const ts = new Date(ref).getTime();
+        if (isNaN(ts) || ts < lo || ts > hi) return;
+        hours += durationToHours(t);
+      });
+      return hours;
+    }
+
+    function fmtCd(ms) {
+      if (ms <= 0) return "0d 00h 00m 00s";
+      const s = Math.floor(ms / 1000);
+      const days = Math.floor(s / 86400);
+      const hrs  = Math.floor((s % 86400) / 3600);
+      const mins = Math.floor((s % 3600) / 60);
+      const secs = s % 60;
+      const p = (n) => String(n).padStart(2, "0");
+      return `${days}d ${p(hrs)}h ${p(mins)}m ${p(secs)}s`;
+    }
+
+    function renderPoints() {
+      const banner = document.getElementById("points");
+      if (!banner) return;
+
+      const goal = Number(config.pointGoal || 0);
+      if (!goal || goal <= 0) {              // no goal set -> hide the banner
+        banner.hidden = true;
+        return;
+      }
+      banner.hidden = false;
+
+      const now = new Date();
+      const { end } = weekBounds(now);
+      const pts = computeWeekPoints(now);
+      const goalR = Math.round(goal * 100) / 100;
+      const curR  = Math.round(pts * 100) / 100;
+      const remaining = Math.max(0, goalR - curR);
+
+      // Banner values.
+      document.getElementById("points-current").textContent = curR.toFixed(2);
+      document.getElementById("points-goal").textContent = goalR.toFixed(2);
+
+      const pct = Math.max(0, Math.min(100, goalR ? (pts / goalR) * 100 : 0));
+      const fill = document.getElementById("points-fill");
+      fill.style.width = pct.toFixed(1) + "%";
+      fill.classList.toggle("over", curR >= goalR);
+
+      // Milestone badges (25/50/75/100%): light each once the goal is reached.
+      const miles = document.getElementById("points-miles");
+      if (miles) {
+        miles.hidden = false;
+        miles.querySelectorAll(".mile").forEach((m) => {
+          const mark = Number(m.getAttribute("data-m"));
+          m.classList.toggle("lit", pct >= mark);
+        });
+      }
+
+      const status = document.getElementById("points-status");
+      if (curR >= goalR) {
+        status.textContent = "\u2713 Goal reached";
+        status.className = "points-status on-goal";
+      } else {
+        status.textContent = remaining.toFixed(2) + " to go";
+        status.className = "points-status under";
+      }
+
+      const rem = document.getElementById("points-remaining");
+      if (curR >= goalR) {
+        rem.textContent = "Goal reached \u2014 \u2713";
+        rem.classList.add("met");
+      } else {
+        rem.textContent = remaining.toFixed(2) + " pts to go";
+        rem.classList.remove("met");
+      }
+
+      const leftMs = end.getTime() - now.getTime();
+      document.getElementById("points-countdown").textContent =
+        leftMs > 0 ? ("\u23F3 " + fmtCd(leftMs)) : "Week complete";
+      document.getElementById("points-ends").textContent =
+        "Resets Monday " + end.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+    }
+
+    function startPointsTimer() {
+      if (pointsTimer) return;
+      pointsTimer = setInterval(renderPoints, 1000);  // keep the countdown live
+    }
+
+    bootstrap();
+    // Refresh on the active board's configured interval so other tabs stay in sync.
+    setInterval(() => {
+      fetch(apiUrl(currentBoard), { cache: "no-store" })
+        .then(r => r.json())
+        .then(d => {
+          config = Object.assign({}, DEFAULT_CONFIG, d.config || {});
+          tasks = d.tasks || [];
+          buildStatuses();
+          render();
+          renderLog();
+          renderPoints();
+        })
+        .catch(() => {});
+    }, config.pollMs || 15000);
+  </script>
+</body>
+</html>
