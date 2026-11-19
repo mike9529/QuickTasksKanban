@@ -627,7 +627,7 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .row > div { flex: 1; min-width: 160px; }
 
 /* ---- Scheduling control: one quiet row, collapsed by default. Tapping the
-   toggle reveals two rows (Available from + Repeat). Styled to match the form. */
+   toggle reveals two rows (Can start on + Repeat). Styled to match the form. */
 .schedule {
   margin-top: 18px;
   border: 1px solid var(--line);

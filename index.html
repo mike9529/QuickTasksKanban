@@ -217,13 +217,13 @@
       const now = Date.now();
       STATUSES.forEach((s) => {
         let inStatus = tasks.filter(t => t.status === s.key);
-        // Scheduled tasks: a task with a future startUntil stays in the JSON but is
-        // hidden from its column until that time arrives. Once startUntil passes it
-        // shows normally. Only affects Pending (a task that has started/finished has no
-        // meaningful "available from" gate).
+        // Scheduled tasks: a task with a future canStartOnUTC stays in the JSON but
+        // is hidden from its column until that time arrives. Once canStartOnUTC
+        // passes it shows normally. Only affects Pending (a task that has
+        // started/finished has no meaningful "can start on" gate).
         inStatus = inStatus.filter((t) => {
-          if (t.status !== "Pending" || t.startUntil == null) return true;
-          const gate = Date.parse(String(t.startUntil));
+          if (t.status !== "Pending" || t.canStartOnUTC == null) return true;
+          const gate = Date.parse(String(t.canStartOnUTC));
           return !(Number.isNaN(gate) ? false : gate > now);
         });
         // Completed column shows only the configured window; older ones move to the log.

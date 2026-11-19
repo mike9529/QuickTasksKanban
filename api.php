@@ -202,11 +202,12 @@ function now_iso(): string {
 
 // ---- Repeating / scheduling --------------------------------------------------
 // A task may carry two optional, additive fields (absent on legacy rows):
-//   "startUntil" : ISO-8601 timestamp. Absent/past = visible now. The UI hides
-//     any task whose startUntil is still in the future, but the JSON keeps it.
+//   "canStartOnUTC" : ISO-8601 UTC timestamp ("can start on" gate). Absent/past =
+//     visible now. The UI hides any task whose canStartOnUTC is still in the
+//     future, but the JSON keeps it.
 //   "repeat"     : { every:int(>=1), unit:"hours"|"days"|"weeks" } | null.
 //     When a task with a repeat lands in Completed, a fresh Pending copy is
-//     spawned (startUntil = completed_at + every*unit) so recurring chores
+//     spawned (canStartOnUTC = completed_at + every*unit) so recurring chores
 //     re-appear without anyone recreating them. The copy is UNASSIGNED.
 
 // Normalize a repeat spec. null/blank/invalid => one-time (null). A valid spec
@@ -226,10 +227,10 @@ function normalize_repeat($val): ?array {
     return ['every' => $every, 'unit' => $unit];
 }
 
-// "Available from" gate. null/blank/invalid => visible now (null). Accepts an
-// ISO-8601 timestamp (with offset/Z, as the browser sends it). Stored as a UTC
-// 'c' string to match created/completed/started.
-function normalize_start_until($val): ?string {
+// "Can start on" gate. null/blank/invalid => visible now (null). Accepts an
+// ISO-8601 UTC timestamp (with offset/Z, as the browser sends it). Stored as a
+// UTC 'c' string to match created/completed/started.
+function normalize_can_start_on_utc($val): ?string {
     if ($val === null || $val === '' || $val === false) return null;
     $s = trim((string)$val);
     if ($s === '') return null;
@@ -378,8 +379,8 @@ switch ($method) {
         // so a plain task never gains these keys and legacy data stays identical.
         $repeat = normalize_repeat($body['repeat'] ?? null);
         if ($repeat !== null) { $task['repeat'] = $repeat; }
-        $startUntil = normalize_start_until($body['startUntil'] ?? null);
-        if ($startUntil !== null) { $task['startUntil'] = $startUntil; }
+        $canStartOnUTC = normalize_can_start_on_utc($body['canStartOnUTC'] ?? null);
+        if ($canStartOnUTC !== null) { $task['canStartOnUTC'] = $canStartOnUTC; }
         $tasks[] = $task;
         save_board($boardKey, $config, $tasks);
         respond(['ok' => true, 'task' => $task], 201);
@@ -402,17 +403,17 @@ switch ($method) {
         // `assignee` is a status-like move (who is doing it), NOT a content edit -- so
         // it is allowed on ANY status, exactly like moving a card between columns.
         $hasAssignee = array_key_exists('assignee', $body);
-        // Scheduling (`repeat` / `startUntil`) is also a status-like move: rescheduling
+        // Scheduling (`repeat` / `canStartOnUTC`) is also a status-like move: rescheduling
         // when or how often a task appears. Like a card move it is allowed while the
         // task is still Pending (so you can move a future task's date / enable a repeat)
         // but is locked once the task has started -- same rule as content edits.
-        $hasReschedule = array_key_exists('repeat', $body) || array_key_exists('startUntil', $body);
+        $hasReschedule = array_key_exists('repeat', $body) || array_key_exists('canStartOnUTC', $body);
         // A content edit (title / description / duration) is allowed ONLY while the
         // task is still Pending. Once it has started or moved to any other status,
         // its content is locked. A status-only or assignee change is unaffected.
         $isContentEdit = $hasTitle || $hasDesc || $hasDur;
         if (!$hasStatus && !$isContentEdit && !$hasAssignee && !$hasReschedule) {
-            respond(['error' => 'nothing to update (send at least one of title, description, duration, status, assignee, repeat, startUntil)'], 400);
+            respond(['error' => 'nothing to update (send at least one of title, description, duration, status, assignee, repeat, canStartOnUTC)'], 400);
         }
         $now = now_iso();
         $found = false;
@@ -497,9 +498,9 @@ switch ($method) {
                         $rep = normalize_repeat($body['repeat']);
                         if ($rep === null) { unset($t['repeat']); } else { $t['repeat'] = $rep; }
                     }
-                    if (array_key_exists('startUntil', $body)) {
-                        $su = normalize_start_until($body['startUntil']);
-                        if ($su === null) { unset($t['startUntil']); } else { $t['startUntil'] = $su; }
+                    if (array_key_exists('canStartOnUTC', $body)) {
+                        $su = normalize_can_start_on_utc($body['canStartOnUTC']);
+                        if ($su === null) { unset($t['canStartOnUTC']); } else { $t['canStartOnUTC'] = $su; }
                     }
                 }
                 // A task can never be left with a blank title.
@@ -520,8 +521,9 @@ switch ($method) {
         // The copy is a brand-new independent Pending task: it carries the same
         // title/description/duration and the same repeat spec (so it chains forever),
         // but it is UNASSIGNED -- each occurrence is a fresh claim for the kids. Its
-        // startUntil is `completed_at + every*unit`, so it stays hidden in Pending until
-        // that time (the UI only shows tasks whose startUntil has passed). We append
+        // canStartOnUTC is `completed_at + every*unit`, so it stays hidden in Pending
+        // until that time (the UI only shows tasks whose canStartOnUTC has passed).
+        // We append
         // it to $tasks here so the single save_board() below persists BOTH the completed
         // original and the new copy atomically.
         $spawned = null;
@@ -538,7 +540,7 @@ switch ($method) {
                     'status'      => 'Pending',
                     'created'     => $now,
                     'repeat'      => $rep,                 // carried forward -> chains
-                    'startUntil'  => add_interval($completedAt, $rep['every'], $rep['unit']),
+                    'canStartOnUTC'  => add_interval($completedAt, $rep['every'], $rep['unit']),
                 ];
                 $desc = trim((string)($updated['description'] ?? ''));
                 if ($desc !== '') { $copy['description'] = $desc; }

@@ -50,7 +50,7 @@
 
         <!-- Scheduling: one quiet control, collapsed by default. "None" = create now,
              no repeat. Tapping the toggle reveals two rows: when it first appears
-             (Available from, defaults to now) and how often it repeats (Repeat). A
+             (Can start on, defaults to now) and how often it repeats (Repeat). A
              completed repeating task spawns a fresh UNASSIGNED copy N units later. -->
         <div class="schedule" id="schedule" data-open="0">
           <button type="button" class="schedule-toggle" id="schedule-toggle" aria-expanded="false">
@@ -60,9 +60,9 @@
           </button>
           <div class="sched-body" id="sched-body" hidden>
             <div class="sched-row">
-              <label for="startUntil">Available from</label>
-              <input type="datetime-local" id="startUntil" name="startUntil" />
-              <span class="sched-hint" id="startUntil-hint">default: now</span>
+              <label for="canStartOnUTC">Can start on</label>
+              <input type="datetime-local" id="canStartOnUTC" name="canStartOnUTC" />
+              <span class="sched-hint" id="canStartOnUTC-hint">default: now</span>
             </div>
             <div class="sched-row sched-row-repeat">
               <label for="repeatEvery" class="sched-repeat-label">Repeat</label>
@@ -125,16 +125,16 @@
 
     // ---- Scheduling control (repeating + "available from") ----
     // Collapsed by default. "None" = create now, no repeat. Tapping the toggle
-    // reveals two rows: Available from (datetime-local, defaults to now) and a
-    // Repeat toggle with Every [n] [unit]. On submit we send startUntil + repeat
+    // reveals two rows: Can start on (datetime-local, defaults to now) and a
+    // Repeat toggle with Every [n] [unit]. On submit we send canStartOnUTC + repeat
     // only when they're meaningful, so a plain task gains neither key.
     const scheduleEl = document.getElementById("schedule");
     const scheduleToggle = document.getElementById("schedule-toggle");
     const scheduleState = document.getElementById("schedule-state");
     const scheduleChevron = document.getElementById("schedule-chevron");
     const schedBody = document.getElementById("sched-body");
-    const startUntilEl = document.getElementById("startUntil");
-    const startUntilHint = document.getElementById("startUntil-hint");
+    const canStartOnUTCEl = document.getElementById("canStartOnUTC");
+    const canStartOnUTCHint = document.getElementById("canStartOnUTC-hint");
     const repeatToggle = document.getElementById("repeat-toggle");
     const repeatEveryEl = document.getElementById("repeatEvery");
     const repeatUnitEl = document.getElementById("repeatUnit");
@@ -160,13 +160,13 @@
     // Whether the schedule control currently represents "something" (a future gate
     // or an active repeat). If not, we send nothing and the task is a plain one.
     function scheduleHasValue() {
-      const hasGate = startUntilEl.value !== "";
+      const hasGate = canStartOnUTCEl.value !== "";
       const hasRepeat = repeatToggle.dataset.on === "1";
       return hasGate || hasRepeat;
     }
     function renderScheduleState() {
       // The state pill + note reflect the current combination.
-      const hasGate = startUntilEl.value !== "";
+      const hasGate = canStartOnUTCEl.value !== "";
       const on = repeatToggle.dataset.on === "1";
       let s = "None";
       if (on && hasGate) s = "Repeat + scheduled";
@@ -198,8 +198,8 @@
     });
     // A manual edit of the date clears the "default: now" hint so it's obvious the
     // value is now explicit. (We don't re-show the hint; it just means "not set".)
-    startUntilEl.addEventListener("input", () => {
-      startUntilHint.style.opacity = startUntilEl.value ? "0" : "";
+    canStartOnUTCEl.addEventListener("input", () => {
+      canStartOnUTCHint.style.opacity = canStartOnUTCEl.value ? "0" : "";
       renderScheduleState();
     });
 
@@ -207,11 +207,11 @@
     // (add mode). A blank/legacy task shows "None" with the repeat fields off.
     function loadSchedule(task) {
       task = task || {};
-      // Available from: stored as a UTC ISO string; show it in local time. Default
+      // Can start on: stored as a UTC ISO string; show it in local time. Default
       // to "now" when absent so the user sees a sensible starting point.
-      const su = task.startUntil ? isoToLocalInput(task.startUntil) : localNowInput();
-      startUntilEl.value = su;
-      startUntilHint.style.opacity = "";
+      const su = task.canStartOnUTC ? isoToLocalInput(task.canStartOnUTC) : localNowInput();
+      canStartOnUTCEl.value = su;
+      canStartOnUTCHint.style.opacity = "";
       const rep = (task.repeat && typeof task.repeat === "object") ? task.repeat : null;
       repeatToggle.dataset.on = rep ? "1" : "0";
       if (rep) {
@@ -316,12 +316,13 @@
         assignee: assigneeEl.value,   // "" = unassigned; cleared server-side
       };
       // Scheduling: only send when the control represents something, so a plain task
-      // stays plain (no repeat/startUntil keys -- legacy data untouched). startUntil
-      // is converted from local input to a UTC ISO string the server stores as-is.
+      // stays plain (no repeat/canStartOnUTC keys -- legacy data untouched).
+      // canStartOnUTC is converted from local input to a UTC ISO string the server
+      // stores as-is.
       if (scheduleHasValue()) {
-        if (startUntilEl.value !== "") {
-          const d = new Date(startUntilEl.value);   // datetime-local -> local time
-          payload.startUntil = d.toISOString();        // -> UTC ISO the server expects
+        if (canStartOnUTCEl.value !== "") {
+          const d = new Date(canStartOnUTCEl.value);   // datetime-local -> local time
+          payload.canStartOnUTC = d.toISOString();        // -> UTC ISO the server expects
         }
         if (repeatToggle.dataset.on === "1") {
           const every = Math.max(1, Math.min(999, parseInt(repeatEveryEl.value, 10) || 1));
@@ -393,7 +394,7 @@
         buildDaysOptions();
       }
       descCount.textContent = form.description.value.length;
-      loadSchedule(task);                // prepopulate schedule (Available from / repeat)
+      loadSchedule(task);                // prepopulate schedule (Can start on / repeat)
       formTitleEl.textContent = "Edit task";
       formLedeEl.innerHTML = "Editing <strong>\u201c" + esc(task.title) + "\u201d</strong> \u2014 the other fields are left as-is; save to update.";
       btnSubmit.textContent = "Save changes";

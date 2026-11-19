@@ -1,10 +1,31 @@
-QuickTasks — Version 1.2
+QuickTasks — Version 1.25
 Date: 2026-11-19
-Status: RELEASED — synced to staging (8086, CODE ONLY) and pushed to GitHub
-        (main + v1.2 tag). Data (boards/, boards.json, tasks.json) was NOT
-        touched — the kids own the live data; the repeat fields are additive so
-        no migration was needed.
+Status: IN DEVELOPMENT (dev only, port 8085). NOT yet synced to staging (8086) or
+        GitHub — ship together when Michael says so.
 
+--------------------------------------------------------------------------------
+v1.25 changes (vs v1.2):
+--------------------------------------------------------------------------------
+  RENAME — task field `startUntil` -> `canStartOnUTC` (dev only, this revision):
+     - Makes the direction of the gate unmistakable: a task CANNOT start before
+       this UTC datetime. Same behavior as before, just a clearer name.
+     - `api.php` (authoritative layer): the JSON key, the
+       `normalize_start_until()` helper -> `normalize_can_start_on_utc()`, the
+       POST-create + PATCH-reschedule handlers, the spawn-on-complete copy key,
+       the "nothing to update" 400 message, and every comment are renamed.
+     - `index.html` (board UI): the Pending "hidden until it arrives" filter now
+       reads `t.canStartOnUTC`; comments updated.
+     - `admin.html` (admin UI): form control id/name -> `canStartOnUTC`, the JS
+       variables `canStartOnUTCEl`/`canStartOnUTCHint`, the visible label
+       "Available from" -> "Can start on", and all comments updated.
+     - `css/style.css`: the schedule-control comment updated to match.
+     - No live migration: NO committed or live JSON carried `startUntil` (verified
+       in dev boards/*.json + tasks.json), so the rename is a clean code-only swap.
+       Any payload that still sends `startUntil` is now ignored by the server as an
+       unknown key, so an old client degrades to "no gate" — no crash, no 500.
+     - `php -l` clean; zero residual `startUntil` / `normalize_start_until` /
+       "Available from" references remain in the dev code.
+     - Scope: dev only (port 8085). Staging (8086) and GitHub were NOT touched.
 --------------------------------------------------------------------------------
 v1.2 changes (vs v1.1):
 --------------------------------------------------------------------------------

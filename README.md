@@ -178,7 +178,7 @@ omit is filled from built-in defaults, so a board file can be minimal.
   "completed": "2026-11-17T20:33:42+00:00",
   "assignee": "Chris",
   "repeat": { "every": 1, "unit": "days" },
-  "startUntil": "2026-11-20T14:00:00+00:00"
+  "canStartOnUTC": "2026-11-20T14:00:00+00:00"
 }
 ```
 
@@ -193,10 +193,10 @@ omit is filled from built-in defaults, so a board file can be minimal.
 | `started` | Set on a `Pending → InProgress` transition; cleared if moved back to `Pending`. |
 | `completed` | Set when the task lands in `Completed`. |
 | `assignee` | Optional; one of the board's `workers`. Absent = unassigned. |
-| `repeat` | **Optional, v1.2.** `{ every: int≥1, unit: "hours"\|"days"\|"weeks" }`. When present and the task is completed, the API spawns a fresh **Pending** copy with `startUntil = completed_at + every·unit`. Absent = one-time. |
-| `startUntil` | **Optional, v1.2.** ISO-8601 "available from". Past/absent = show now; future = the task sits in `Pending` but is **hidden on the board** until the time arrives (also powers one-time future tasks). |
+| `repeat` | **Optional, v1.2.** `{ every: int≥1, unit: "hours"\|"days"\|"weeks" }`. When present and the task is completed, the API spawns a fresh **Pending** copy with `canStartOnUTC = completed_at + every·unit`. Absent = one-time. |
+| `canStartOnUTC` | **Optional, v1.2** (renamed from `startUntil` in **v1.25**). ISO-8601 UTC "can start on" gate. Past/absent = show now; future = the task sits in `Pending` but is **hidden on the board** until the time arrives (also powers one-time future tasks). |
 
-Both `repeat` and `startUntil` are **additive and absent by default**, so legacy
+Both `repeat` and `canStartOnUTC` are **additive and absent by default**, so legacy
 board files need no migration — old tasks simply have neither field and behave
 exactly as before.
 
@@ -213,13 +213,13 @@ All endpoints are under `/api.php`, all bodies/responses are JSON.
 | `GET` | `/api.php` | Same, for the **default** board. |
 | `GET` | `/api.php?board=<key>&status=Pending` | Filter the returned tasks by status. |
 | `POST` | `/api.php?board=<key>` | Create a task: `{ title, duration, description?, status?, assignee? }`. New tasks start in `Pending`. |
-| `PATCH` / `PUT` | `/api.php?board=<key>` | Update `{ id, … }` — any of `status`, `title`, `description`, `duration`, `assignee`, `repeat`, `startUntil`. |
+| `PATCH` / `PUT` | `/api.php?board=<key>` | Update `{ id, … }` — any of `status`, `title`, `description`, `duration`, `assignee`, `repeat`, `canStartOnUTC`. |
 | `DELETE` | `/api.php?board=<key>&id=<id>` | Delete a task. |
 
 **Rules enforced by the API:**
 
 - **Content edits (title/description/duration) and schedule edits (`repeat` /
-  `startUntil`) are allowed only while a task is `Pending`.** Once it starts (or
+  `canStartOnUTC`) are allowed only while a task is `Pending`.** Once it starts (or
   moves to any other status) its content and schedule are locked — such an edit on
   a non-Pending task returns `403`.
 - **Status is a "move"**, allowed at any time.
@@ -236,7 +236,7 @@ All endpoints are under `/api.php`, all bodies/responses are JSON.
   mutation. A completed task is permanent.
 - **Spawn on complete (v1.2):** when a task carrying a `repeat` spec transitions
   into `Completed`, the API appends a fresh **independent `Pending`** copy (same
-  title/description/duration/`repeat`) with `startUntil = completed_at + every·unit`,
+  title/description/duration/`repeat`) with `canStartOnUTC = completed_at + every·unit`,
   written in the **same atomic save** as the parent. The spawned copy is
   **unassigned** by design, and the response includes a `spawned` field so the UI
   can acknowledge it. A one-time task (no `repeat`) spawns nothing.
@@ -298,6 +298,33 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
 ---
 
 ## Revisions
+
+### v1.25 — 2026-11-19 (RELEASING)
+- **Rename — `startUntil` → `canStartOnUTC`.** The task's "can start on" gate field
+  is renamed so the direction of the constraint reads clearly: a task cannot start
+  before this **UTC** datetime. Behavior is unchanged — only the name changed.
+  - **`api.php`:** the JSON key, the `normalize_start_until()` helper
+    (`→ normalize_can_start_on_utc()`), the POST-create + PATCH-reschedule handlers,
+    the spawn-on-complete copy key, the "nothing to update" 400 message, and every
+    comment.
+  - **`index.html`:** the Pending "hidden until it arrives" filter reads
+    `t.canStartOnUTC`; comments updated.
+  - **`admin.html`:** the form control `id`/`name` → `canStartOnUTC`, the JS vars
+    `canStartOnUTCEl` / `canStartOnUTCHint`, the visible label **"Available from"
+    → "Can start on"**, and all comments.
+  - **`css/style.css`:** the schedule-control comment updated to match.
+  - **No migration / no data touched:** no committed or live JSON (`boards/*.json`,
+    `tasks.json`) carried `startUntil`, so this is a clean code-only rename. Any
+    payload that still sends `startUntil` is now ignored by the server as an unknown
+    key, so an old client degrades to "no gate" — no crash, no 500. `php -l` clean;
+    zero residual `startUntil` / `normalize_start_until` / "Available from" references
+    remain in the dev code.
+  - **Verified on dev 8085** (throwaway `scratch` board, then removed): create a
+    future-gate task; create a past-gate + repeat task; reschedule a Pending task;
+    clear via explicit `null`; complete → spawned copy carries `canStartOnUTC`
+    (`completed_at + every·unit`), is unassigned, and does **not** carry a legacy
+    `startUntil` key; rescheduling a `Completed` task → 403; a legacy-only body → 400
+    and a legacy key inside a valid body is ignored. Kids' boards left byte-identical.
 
 ### v1.2 — 2026-11-19
 - **Feature — repeating / scheduled tasks.** Two new optional per-task fields,
