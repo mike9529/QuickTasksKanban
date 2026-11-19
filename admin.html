@@ -48,6 +48,41 @@
           </div>
         </div>
 
+        <!-- Scheduling: one quiet control, collapsed by default. "None" = create now,
+             no repeat. Tapping the toggle reveals two rows: when it first appears
+             (Available from, defaults to now) and how often it repeats (Repeat). A
+             completed repeating task spawns a fresh UNASSIGNED copy N units later. -->
+        <div class="schedule" id="schedule" data-open="0">
+          <button type="button" class="schedule-toggle" id="schedule-toggle" aria-expanded="false">
+            <span class="sched-label">Schedule</span>
+            <span class="sched-state" id="schedule-state">None</span>
+            <span class="sched-chevron" id="schedule-chevron">&#x25BE;</span>
+          </button>
+          <div class="sched-body" id="sched-body" hidden>
+            <div class="sched-row">
+              <label for="startUntil">Available from</label>
+              <input type="datetime-local" id="startUntil" name="startUntil" />
+              <span class="sched-hint" id="startUntil-hint">default: now</span>
+            </div>
+            <div class="sched-row sched-row-repeat">
+              <label for="repeatEvery" class="sched-repeat-label">Repeat</label>
+              <span class="repeat-toggle" id="repeat-toggle" data-on="0">
+                <span class="repeat-dot"></span><span class="repeat-state">off</span>
+              </span>
+              <span class="repeat-spec">
+                <input type="number" id="repeatEvery" name="repeatEvery" min="1" max="999" value="1" disabled />
+                <span class="repeat-every-word">every</span>
+                <select id="repeatUnit" name="repeatUnit" disabled>
+                  <option value="hours">hour</option>
+                  <option value="days" selected>day</option>
+                  <option value="weeks">week</option>
+                </select>
+              </span>
+            </div>
+            <p class="sched-note" id="sched-note" hidden>On complete, a new (unassigned) copy is created, hidden until its date.</p>
+          </div>
+        </div>
+
         <div class="actions">
           <button type="submit" class="btn" id="btn-submit">Add task</button>
           <a href="index.html" class="btn secondary" id="btn-cancel">Clear</a>
@@ -55,12 +90,6 @@
         </div>
         <div class="msg" id="msg" role="status" aria-live="polite"></div>
       </form>
-    </div>
-
-    <div class="panel">
-      <h1 class="page-title">All tasks <span class="board-tag" id="board-tag"></span></h1>
-      <p class="lede">Stored locally in <code>boards/&lt;name&gt;.json</code> — no database.</p>
-      <div class="list" id="list"></div>
     </div>
   </main>
 
@@ -82,7 +111,6 @@
 
     const form = document.getElementById("task-form");
     const msg = document.getElementById("msg");
-    const listEl = document.getElementById("list");
     const switcherEl = document.getElementById("board-switch");
     const daysEl = document.getElementById("days");
     const daysLabelEl = document.getElementById("days-label");
@@ -94,7 +122,107 @@
     const navBoard = document.getElementById("nav-board");
     const navAdd = document.getElementById("nav-add");
     const footBoard = document.getElementById("foot-board");
-    const boardTag = document.getElementById("board-tag");
+
+    // ---- Scheduling control (repeating + "available from") ----
+    // Collapsed by default. "None" = create now, no repeat. Tapping the toggle
+    // reveals two rows: Available from (datetime-local, defaults to now) and a
+    // Repeat toggle with Every [n] [unit]. On submit we send startUntil + repeat
+    // only when they're meaningful, so a plain task gains neither key.
+    const scheduleEl = document.getElementById("schedule");
+    const scheduleToggle = document.getElementById("schedule-toggle");
+    const scheduleState = document.getElementById("schedule-state");
+    const scheduleChevron = document.getElementById("schedule-chevron");
+    const schedBody = document.getElementById("sched-body");
+    const startUntilEl = document.getElementById("startUntil");
+    const startUntilHint = document.getElementById("startUntil-hint");
+    const repeatToggle = document.getElementById("repeat-toggle");
+    const repeatEveryEl = document.getElementById("repeatEvery");
+    const repeatUnitEl = document.getElementById("repeatUnit");
+    const schedNote = document.getElementById("sched-note");
+
+    // Convert a UTC ISO string to the value a <input type=datetime-local> expects
+    // (YYYY-MM-DDTHH:mm, in LOCAL time). Returns "" for blank/invalid.
+    function isoToLocalInput(iso) {
+      if (!iso) return "";
+      const d = new Date(iso);
+      if (isNaN(d.getTime())) return "";
+      const pad = (n) => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+             "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    // Current local time as a datetime-local value (the "default: now" value).
+    function localNowInput() {
+      const d = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+             "T" + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    // Whether the schedule control currently represents "something" (a future gate
+    // or an active repeat). If not, we send nothing and the task is a plain one.
+    function scheduleHasValue() {
+      const hasGate = startUntilEl.value !== "";
+      const hasRepeat = repeatToggle.dataset.on === "1";
+      return hasGate || hasRepeat;
+    }
+    function renderScheduleState() {
+      // The state pill + note reflect the current combination.
+      const hasGate = startUntilEl.value !== "";
+      const on = repeatToggle.dataset.on === "1";
+      let s = "None";
+      if (on && hasGate) s = "Repeat + scheduled";
+      else if (on) s = "Repeats";
+      else if (hasGate) s = "Scheduled";
+      scheduleState.textContent = s;
+      scheduleState.dataset.active = (s === "None") ? "0" : "1";
+      schedNote.hidden = !on;
+      // Repeat fields are only enabled when the repeat toggle is on.
+      repeatEveryEl.disabled = !on;
+      repeatUnitEl.disabled = !on;
+      repeatToggle.dataset.on = on ? "1" : "0";
+      const dot = repeatToggle.querySelector(".repeat-dot");
+      const st = repeatToggle.querySelector(".repeat-state");
+      if (dot) dot.dataset.on = on ? "1" : "0";
+      if (st) st.textContent = on ? "on" : "off";
+    }
+    function setScheduleOpen(open) {
+      scheduleEl.dataset.open = open ? "1" : "0";
+      schedBody.hidden = !open;
+      scheduleToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+    scheduleToggle.addEventListener("click", () => {
+      setScheduleOpen(scheduleEl.dataset.open !== "1");
+    });
+    repeatToggle.addEventListener("click", () => {
+      repeatToggle.dataset.on = repeatToggle.dataset.on === "1" ? "0" : "1";
+      renderScheduleState();
+    });
+    // A manual edit of the date clears the "default: now" hint so it's obvious the
+    // value is now explicit. (We don't re-show the hint; it just means "not set".)
+    startUntilEl.addEventListener("input", () => {
+      startUntilHint.style.opacity = startUntilEl.value ? "0" : "";
+      renderScheduleState();
+    });
+
+    // Populate the control from an existing task (edit mode) or reset to defaults
+    // (add mode). A blank/legacy task shows "None" with the repeat fields off.
+    function loadSchedule(task) {
+      task = task || {};
+      // Available from: stored as a UTC ISO string; show it in local time. Default
+      // to "now" when absent so the user sees a sensible starting point.
+      const su = task.startUntil ? isoToLocalInput(task.startUntil) : localNowInput();
+      startUntilEl.value = su;
+      startUntilHint.style.opacity = "";
+      const rep = (task.repeat && typeof task.repeat === "object") ? task.repeat : null;
+      repeatToggle.dataset.on = rep ? "1" : "0";
+      if (rep) {
+        repeatEveryEl.value = String(rep.every || 1);
+        repeatUnitEl.value = rep.unit || "days";
+      } else {
+        repeatEveryEl.value = "1";
+        repeatUnitEl.value = "days";
+      }
+      renderScheduleState();
+    }
 
     const apiUrl = (board) => "api.php?board=" + encodeURIComponent(board || currentBoard);
     const boardParam = () => "?board=" + encodeURIComponent(currentBoard);
@@ -109,11 +237,6 @@
       if (config.units === "minutes") return n === 1 ? "minute" : "minutes";
       if (config.units === "hours")   return n === 1 ? "hour" : "hours";
       return n === 1 ? "day" : "days";
-    }
-    function unitShort() {
-      if (config.units === "minutes") return "m";
-      if (config.units === "hours")   return "h";
-      return "d";
     }
 
     // Rebuild the estimate dropdown from the active board's durationOptions + units.
@@ -166,54 +289,18 @@
       showMsg._t = setTimeout(() => { msg.textContent = ""; }, 4000);
     }
 
-    async function loadList() {
+    // Load the active board's config so the form's duration/assignee dropdowns
+    // are populated even on a plain add (no task selected). The task board itself
+    // lives on index.html, so this page no longer renders a task list.
+    async function loadConfig() {
       try {
         const res = await fetch(apiUrl(currentBoard), { cache: "no-store" });
         const data = await res.json();
         applyConfig(data.config);
-        const tasks = data.tasks || [];
-        tasks.sort((a, b) => String(b.created || "").localeCompare(String(a.created || "")));
-        boardTag.textContent = "· " + (config.name || currentBoard);
-        listEl.innerHTML = "";
-        if (tasks.length === 0) {
-          listEl.innerHTML = '<p class="lede">No tasks yet.</p>';
-          return;
-        }
-        tasks.forEach((t) => {
-          const item = document.createElement("div");
-          item.className = "list-item";
-          const n = Number(t.duration != null ? t.duration : t.days) || 0;
-          item.innerHTML =
-            `<span class="l-title">${esc(t.title)}</span>
-             <span class="l-right">
-               <span class="chip" data-status="${esc(t.status)}">${esc(t.status)}</span>
-               <span class="days">🗓 ${n}${unitShort()}</span>
-               ${t.status === "Pending"
-                 ? '<a class="mini-edit" href="admin.html?id=' + encodeURIComponent(t.id) + '\u0026board=' + encodeURIComponent(currentBoard) + '" title="Edit">\u270e\uFE0F</a>'
-                 : '<span class="mini-edit locked" title="Locked — only Pending tasks can be edited">🔒</span>'}
-               <button class="mini-del" title="Delete">✕</button>
-             </span>`;
-          item.querySelector(".mini-del").addEventListener("click", async () => {
-            const r = await fetch(apiUrl(currentBoard) + "&id=" + encodeURIComponent(t.id), { method: "DELETE" });
-            if (!r.ok) { showMsg("Could not delete task.", false); return; }
-            showMsg("Deleted \u201c" + t.title + "\u201d.", true);
-            loadList();
-          });
-          // click the chip to cycle status
-          item.querySelector(".chip").addEventListener("click", async () => {
-            const i = STATUSES.indexOf(t.status);
-            const next = STATUSES[(i + 1) % STATUSES.length];
-            const r = await fetch(apiUrl(currentBoard), {
-              method: "PATCH",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: t.id, status: next }),
-            });
-            if (!r.ok) { showMsg("Could not update status.", false); return; }
-            loadList();
-          });
-        });
       } catch (err) {
-        listEl.innerHTML = '<p class="lede" style="color:var(--halted)">Could not reach the API: ' + esc(err.message) + '</p>';
+        // Network hiccup: fall back to the default options so the form still works.
+        buildDaysOptions();
+        buildAssigneeOptions();
       }
     }
 
@@ -228,6 +315,19 @@
         duration: Number(daysEl.value),
         assignee: assigneeEl.value,   // "" = unassigned; cleared server-side
       };
+      // Scheduling: only send when the control represents something, so a plain task
+      // stays plain (no repeat/startUntil keys -- legacy data untouched). startUntil
+      // is converted from local input to a UTC ISO string the server stores as-is.
+      if (scheduleHasValue()) {
+        if (startUntilEl.value !== "") {
+          const d = new Date(startUntilEl.value);   // datetime-local -> local time
+          payload.startUntil = d.toISOString();        // -> UTC ISO the server expects
+        }
+        if (repeatToggle.dataset.on === "1") {
+          const every = Math.max(1, Math.min(999, parseInt(repeatEveryEl.value, 10) || 1));
+          payload.repeat = { every: every, unit: repeatUnitEl.value || "days" };
+        }
+      }
       // Editing prepopulates the task; creating always starts in Pending.
       if (id) {
         payload.id = id;
@@ -249,7 +349,7 @@
         descCount.textContent = "0";
         buildDaysOptions();
         exitEdit();
-        loadList();
+        loadConfig();
         setTimeout(() => { window.location.href = "index.html" + boardParam(); }, 500);
       } else {
         showMsg(data.error || (id ? "Could not save changes." : "Could not add task."), false);
@@ -271,8 +371,9 @@
       btnSubmit.textContent = "Add task";
       btnCancel.textContent = "Clear";
       btnCancel.href = "#";              // in add mode "Clear" just resets the form
-      btnCancel.onclick = (ev) => { ev.preventDefault(); form.reset(); descCount.textContent = "0"; buildAssigneeOptions(); };
+      btnCancel.onclick = (ev) => { ev.preventDefault(); form.reset(); descCount.textContent = "0"; buildAssigneeOptions(); loadSchedule(); };
       btnBoard.href = "index.html" + boardParam();
+      loadSchedule();                    // reset the schedule control to defaults (now / off)
     }
 
     function enterEdit(task) {
@@ -292,6 +393,7 @@
         buildDaysOptions();
       }
       descCount.textContent = form.description.value.length;
+      loadSchedule(task);                // prepopulate schedule (Available from / repeat)
       formTitleEl.textContent = "Edit task";
       formLedeEl.innerHTML = "Editing <strong>\u201c" + esc(task.title) + "\u201d</strong> \u2014 the other fields are left as-is; save to update.";
       btnSubmit.textContent = "Save changes";
@@ -372,7 +474,7 @@
 
     async function bootstrap() {
       await initSwitcher();
-      await loadList();
+      await loadConfig();
       startEditFromUrl();
     }
 
@@ -382,8 +484,6 @@
     });
 
     bootstrap();
-    // Refresh on the active board's configured interval so other tabs stay in sync.
-    setInterval(loadList, 15000);
   </script>
 </body>
 </html>

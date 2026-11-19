@@ -385,6 +385,15 @@ a:hover { text-decoration: underline; }
   border-color: var(--line);
 }
 .card .assignee.unassigned .assignee-name::before { content: "\2753"; }
+/* Owner-locked (completed task): frozen owner, not clickable. */
+.card .assignee.locked {
+  cursor: default;
+  color: var(--muted);
+  background: rgba(154,163,199,.10);
+  border-color: var(--line);
+}
+.card .assignee.locked:hover { background: rgba(154,163,199,.10); }
+.card .assignee.locked .assignee-name::before { content: "\1F512"; /* 🔒 */ }
 
 /* ---- Assignee modal ---- */
 .assignee-overlay {
@@ -462,6 +471,13 @@ a:hover { text-decoration: underline; }
   color: var(--muted);
   font-size: 12px;
 }
+/* Left group of the meta row: repeat chip + duration badge, kept together so the
+   right side still holds the edit/delete actions. */
+.card .meta .meta-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .card .days {
   display: inline-flex;
   align-items: center;
@@ -470,6 +486,22 @@ a:hover { text-decoration: underline; }
   border-radius: 999px;
   padding: 2px 10px;
   font-weight: 600;
+}
+/* Repeat chip: a small "\u21bb 1d" indicator, styled like .days but accent-tinted so a
+   recurring chore reads as recurring. Purely informational (the spawn is server-side). */
+.card .meta .repeat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(91,141,239,.16);
+  color: var(--accent);
+  border: 1px solid rgba(91,141,239,.35);
+  border-radius: 999px;
+  padding: 1px 8px;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
 }
 .card .del {
   border: none;
@@ -482,6 +514,18 @@ a:hover { text-decoration: underline; }
   border-radius: 6px;
 }
 .card .del:hover { color: var(--halted); background: rgba(239,91,111,.12); }
+/* Delete locked (completed task): frozen, not clickable. */
+/* Locked state shared by BOTH the edit and delete controls on a completed task,
+   so the two lock glyphs look identical (same size, cursor, opacity). */
+.card .del.locked {
+  cursor: not-allowed;
+  color: var(--muted);
+  opacity: .55;
+  background: transparent;
+  font-size: 14px;
+  padding: 2px 5px;
+}
+.card .del.locked:hover { color: var(--muted); background: transparent; }
 
 /* description expander on a card (only present when a description exists) */
 .card .desc-toggle {
@@ -530,6 +574,8 @@ a:hover { text-decoration: underline; }
   cursor: not-allowed;
   color: var(--muted);
   opacity: .55;
+  font-size: 14px;
+  padding: 2px 5px;
 }
 .card .edit.locked:hover { color: var(--muted); background: transparent; }
 
@@ -579,6 +625,117 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
 .row { display: flex; gap: 16px; flex-wrap: wrap; }
 .row > div { flex: 1; min-width: 160px; }
+
+/* ---- Scheduling control: one quiet row, collapsed by default. Tapping the
+   toggle reveals two rows (Available from + Repeat). Styled to match the form. */
+.schedule {
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-soft);
+  padding: 4px 12px;
+}
+.schedule-toggle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 10px 0;
+  color: var(--ink);
+  font-size: 15px;
+  text-align: left;
+}
+.schedule-toggle .sched-label { font-weight: 600; }
+.schedule-toggle .sched-state {
+  margin-left: 2px;
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: 500;
+}
+.schedule-toggle .sched-state[data-active="1"] { color: var(--accent); font-weight: 600; }
+.schedule-toggle .sched-chevron {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 13px;
+  transition: transform .15s ease;
+}
+.schedule[data-open="1"] .schedule-toggle .sched-chevron { transform: rotate(180deg); }
+.sched-body { padding: 6px 0 12px; border-top: 1px solid var(--line); }
+.sched-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 0;
+}
+.sched-row label { font-weight: 600; font-size: 14px; min-width: 104px; }
+.sched-row input[type="datetime-local"] {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 14px;
+  color-scheme: dark;
+}
+.sched-row input[type="datetime-local"]:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
+.sched-hint { font-size: 12px; color: var(--muted); transition: opacity .15s ease; }
+.sched-repeat-label { min-width: 104px; }
+/* Repeat on/off pill toggle */
+.repeat-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  color: var(--muted);
+}
+.repeat-toggle .repeat-dot {
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--muted);
+  box-shadow: none;
+}
+.repeat-toggle[data-on="1"] { color: var(--accent); border-color: rgba(91,141,239,.5); background: rgba(91,141,239,.12); }
+.repeat-toggle[data-on="1"] .repeat-dot { background: var(--accent); box-shadow: 0 0 6px rgba(91,141,239,.7); }
+.repeat-toggle .repeat-state { font-weight: 600; }
+/* Every [n] every [unit] — fields are disabled (greyed) until repeat is on */
+#repeatEvery, #repeatUnit {
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-size: 14px;
+  color-scheme: dark;
+}
+#repeatEvery { width: 64px; text-align: center; }
+#repeatEvery[disabled], #repeatUnit[disabled] { opacity: .45; cursor: not-allowed; }
+.repeat-every-word { font-size: 13px; color: var(--muted); }
+/* The "Every [n] [unit]" group stays together on one line so the unit dropdown
+   never drops below the number. Wraps only as a unit on very narrow screens. */
+.sched-row-repeat { flex-wrap: wrap; }
+.repeat-spec {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+.sched-note {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+  font-style: italic;
+}
 
 .btn {
   border: none;

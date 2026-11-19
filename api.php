@@ -200,6 +200,55 @@ function now_iso(): string {
     return (new DateTime('now', new DateTimeZone('UTC')))->format('c');
 }
 
+// ---- Repeating / scheduling --------------------------------------------------
+// A task may carry two optional, additive fields (absent on legacy rows):
+//   "startUntil" : ISO-8601 timestamp. Absent/past = visible now. The UI hides
+//     any task whose startUntil is still in the future, but the JSON keeps it.
+//   "repeat"     : { every:int(>=1), unit:"hours"|"days"|"weeks" } | null.
+//     When a task with a repeat lands in Completed, a fresh Pending copy is
+//     spawned (startUntil = completed_at + every*unit) so recurring chores
+//     re-appear without anyone recreating them. The copy is UNASSIGNED.
+
+// Normalize a repeat spec. null/blank/invalid => one-time (null). A valid spec
+// always returns {every, unit}. An invalid unit falls back to one-time so a bad
+// payload can never create a runaway spawn loop.
+function normalize_repeat($val): ?array {
+    if ($val === null || $val === '' || $val === false) return null;
+    $every = 0; $unit = '';
+    if (is_array($val)) {
+        $every = (int)($val['every'] ?? 0);
+        $unit  = strtolower((string)($val['unit'] ?? ''));
+    }
+    if ($every < 1) $every = 1;
+    if (!in_array($unit, ['hours', 'days', 'weeks'], true)) {
+        return null; // invalid unit => treat as one-time
+    }
+    return ['every' => $every, 'unit' => $unit];
+}
+
+// "Available from" gate. null/blank/invalid => visible now (null). Accepts an
+// ISO-8601 timestamp (with offset/Z, as the browser sends it). Stored as a UTC
+// 'c' string to match created/completed/started.
+function normalize_start_until($val): ?string {
+    if ($val === null || $val === '' || $val === false) return null;
+    $s = trim((string)$val);
+    if ($s === '') return null;
+    $ts = strtotime($s);
+    if ($ts === false) return null;
+    return (new DateTime('@' . $ts))->format('c');
+}
+
+// Advance an ISO timestamp by `every` units and return the new UTC 'c' string.
+// Used to schedule the next occurrence of a repeating task.
+function add_interval(string $iso, int $every, string $unit): string {
+    $ts = strtotime($iso);
+    if ($ts === false) $ts = time();
+    $units = ['hours' => 3600, 'days' => 86400, 'weeks' => 604800];
+    $sec = $units[$unit] ?? 86400;
+    $ts += max(1, $every) * $sec;
+    return (new DateTime('@' . $ts))->format('c');
+}
+
 // Snap a requested estimate to the nearest allowed value for this board.
 // Falls back to clamping 1..5 when a board has no durationOptions.
 function normalize_duration($value, array $options): int {
@@ -324,6 +373,13 @@ switch ($method) {
         // Optional worker assignment (a board's own `workers` list). Empty = unassigned.
         $assignee = mb_substr(trim((string)($body['assignee'] ?? '')), 0, 50);
         if ($assignee !== '') { $task['assignee'] = $assignee; }
+        // Scheduling fields (repeating + "available from"). Both optional and
+        // additive: a blank/omitted value means "no repeat" / "available now",
+        // so a plain task never gains these keys and legacy data stays identical.
+        $repeat = normalize_repeat($body['repeat'] ?? null);
+        if ($repeat !== null) { $task['repeat'] = $repeat; }
+        $startUntil = normalize_start_until($body['startUntil'] ?? null);
+        if ($startUntil !== null) { $task['startUntil'] = $startUntil; }
         $tasks[] = $task;
         save_board($boardKey, $config, $tasks);
         respond(['ok' => true, 'task' => $task], 201);
@@ -346,21 +402,41 @@ switch ($method) {
         // `assignee` is a status-like move (who is doing it), NOT a content edit -- so
         // it is allowed on ANY status, exactly like moving a card between columns.
         $hasAssignee = array_key_exists('assignee', $body);
+        // Scheduling (`repeat` / `startUntil`) is also a status-like move: rescheduling
+        // when or how often a task appears. Like a card move it is allowed while the
+        // task is still Pending (so you can move a future task's date / enable a repeat)
+        // but is locked once the task has started -- same rule as content edits.
+        $hasReschedule = array_key_exists('repeat', $body) || array_key_exists('startUntil', $body);
         // A content edit (title / description / duration) is allowed ONLY while the
         // task is still Pending. Once it has started or moved to any other status,
         // its content is locked. A status-only or assignee change is unaffected.
         $isContentEdit = $hasTitle || $hasDesc || $hasDur;
-        if (!$hasStatus && !$isContentEdit && !$hasAssignee) {
-            respond(['error' => 'nothing to update (send at least one of title, description, duration, status, assignee)'], 400);
+        if (!$hasStatus && !$isContentEdit && !$hasAssignee && !$hasReschedule) {
+            respond(['error' => 'nothing to update (send at least one of title, description, duration, status, assignee, repeat, startUntil)'], 400);
         }
         $now = now_iso();
         $found = false;
         $updated = null;
         foreach ($tasks as &$t) {
             if (($t['id'] ?? '') === $id) {
-                if ($isContentEdit && ($t['status'] ?? 'Pending') !== 'Pending') {
+                // Capture the task's ORIGINAL status up front. Both locks below read
+                // this -- never the post-mutation value -- so a combined PATCH that
+                // moves a card out of Completed AND reassigns in the same request
+                // cannot sneak past either gate.
+                $origStatus = $t['status'] ?? 'Pending';
+                if ($isContentEdit && $origStatus !== 'Pending') {
                     respond([
-                        'error' => 'locked — only Pending tasks can be edited (current status: ' . (($t['status'] ?? 'Pending')) . ')',
+                        'error' => 'locked — only Pending tasks can be edited (current status: ' . $origStatus . ')',
+                    ], 403);
+                }
+                // Owner lock: once a task has reached Completed, its owner is frozen.
+                // A reassign (including an "unassign") is refused on a completed task,
+                // even when combined with a move back to another column -- you cannot
+                // reassign the moment a task is done. Pending/InProgress/Halted may
+                // change owners freely, exactly like a card move.
+                if ($hasAssignee && $origStatus === 'Completed') {
+                    respond([
+                        'error' => 'owner locked — a completed task\'s owner cannot be changed',
                     ], 403);
                 }
                 if ($hasTitle) {
@@ -396,14 +472,34 @@ switch ($method) {
                         $t['completed'] = $now;
                     }
                 }
-                // Worker assignment -- a status-like move, allowed on any status.
-                // An explicit empty string clears the assignment; null leaves it as-is.
+                // Worker assignment -- a status-like move, allowed on any non-completed
+                // status (a Completed task is already gated above). An explicit empty
+                // string clears the assignment; null leaves it as-is.
                 if ($hasAssignee) {
                     $worker = mb_substr(trim((string)$body['assignee']), 0, 50);
                     if ($worker === '') {
                         unset($t['assignee']);
                     } else {
                         $t['assignee'] = $worker;
+                    }
+                }
+                // Scheduling -- a status-like move, allowed only while the task is still
+                // Pending (same lock as content edits): you can move a future task's
+                // "available from" date or enable/clear its repeat before it starts, but
+                // not after. A null/blank value clears the field.
+                if ($hasReschedule) {
+                    if ($origStatus !== 'Pending') {
+                        respond([
+                            'error' => 'locked — only Pending tasks can be rescheduled (current status: ' . $origStatus . ')',
+                        ], 403);
+                    }
+                    if (array_key_exists('repeat', $body)) {
+                        $rep = normalize_repeat($body['repeat']);
+                        if ($rep === null) { unset($t['repeat']); } else { $t['repeat'] = $rep; }
+                    }
+                    if (array_key_exists('startUntil', $body)) {
+                        $su = normalize_start_until($body['startUntil']);
+                        if ($su === null) { unset($t['startUntil']); } else { $t['startUntil'] = $su; }
                     }
                 }
                 // A task can never be left with a blank title.
@@ -419,14 +515,62 @@ switch ($method) {
         if (!$found) {
             respond(['error' => 'task not found'], 404);
         }
+        // REPEAT TRIGGER: when a task with a repeat spec just reached Completed, spawn a
+        // fresh occurrence so a recurring chore re-appears without anyone recreating it.
+        // The copy is a brand-new independent Pending task: it carries the same
+        // title/description/duration and the same repeat spec (so it chains forever),
+        // but it is UNASSIGNED -- each occurrence is a fresh claim for the kids. Its
+        // startUntil is `completed_at + every*unit`, so it stays hidden in Pending until
+        // that time (the UI only shows tasks whose startUntil has passed). We append
+        // it to $tasks here so the single save_board() below persists BOTH the completed
+        // original and the new copy atomically.
+        $spawned = null;
+        if ($hasStatus
+            && ($updated['status'] ?? '') === 'Completed'
+            && ($origStatus ?? 'Pending') !== 'Completed') {
+            $rep = normalize_repeat($updated['repeat'] ?? null);
+            if ($rep !== null) {
+                $completedAt = $updated['completed'] ?? $now;
+                $copy = [
+                    'id'          => make_id(),
+                    'title'       => $updated['title'],
+                    'duration'    => $updated['duration'] ?? 1,
+                    'status'      => 'Pending',
+                    'created'     => $now,
+                    'repeat'      => $rep,                 // carried forward -> chains
+                    'startUntil'  => add_interval($completedAt, $rep['every'], $rep['unit']),
+                ];
+                $desc = trim((string)($updated['description'] ?? ''));
+                if ($desc !== '') { $copy['description'] = $desc; }
+                // No 'assignee' key -> the new occurrence is unassigned by design.
+                $tasks[] = $copy;
+                $spawned = $copy;
+            }
+        }
         save_board($boardKey, $config, $tasks);
-        respond(['ok' => true, 'task' => $updated]);
+        if ($spawned !== null) {
+            respond(['ok' => true, 'task' => $updated, 'spawned' => $spawned]);
+        } else {
+            respond(['ok' => true, 'task' => $updated]);
+        }
         break;
 
     case 'DELETE':
         $id = (string)($body['id'] ?? $_GET['id'] ?? '');
         if ($id === '') {
             respond(['error' => 'id is required'], 400);
+        }
+        // Delete lock: a task that has reached Completed is permanent. Refuse the
+        // delete (403) BEFORE any mutation, so a completed task is never removed --
+        // its owner and its record both stay frozen.
+        $target = null;
+        foreach ($tasks as $t) {
+            if (($t['id'] ?? '') === $id) { $target = $t; break; }
+        }
+        if ($target !== null && ($target['status'] ?? 'Pending') === 'Completed') {
+            respond([
+                'error' => 'cannot delete — a completed task is locked and permanent',
+            ], 403);
         }
         $before = count($tasks);
         $tasks = array_values(array_filter($tasks, fn($t) => ($t['id'] ?? '') !== $id));

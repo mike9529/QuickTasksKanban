@@ -19,17 +19,17 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.0** |
+| **Version** | **1.2** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
-| **Team points** | Yes — weekly goal with a progress bar (per-board, optional) |
-| **Next (1.1, not in this release)** | Milestone badges (25/50/75/100%) in the points header — in progress on dev only |
+| **Team points** | Yes — weekly goal with a progress bar + 25/50/75/100% milestone badges |
+| **Repeating tasks** | Yes — a task can recur on its own or sit hidden until a future start time |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.0` = the current stable multi-board build above.
-`1.1` (badges) is still in progress on the dev board and is *not* part of this
-release.
+completed and shipped**. `1.2` (this release) adds repeating / scheduled tasks
+plus two completed-task locks; `1.1` added the milestone badges; `1.0` was the
+initial multi-board build. See [Revisions](#revisions) below.
 
 ---
 
@@ -45,11 +45,16 @@ release.
   its column), a **team-points goal**, **workers** (assignees), and more — all per
   board.
 - **Team points** — when a board has a non-zero `pointGoal`, a header shows
-  points earned this week toward the goal, a progress bar, "X pts to go", and a
-  live countdown to Monday's reset. `pointGoal: 0` hides the header entirely.
-- **Admin form** — add/edit/delete tasks. Editing a task's content is allowed only
-  while it is still `Pending`; once started, the content locks (status/assignee can
-  still move).
+  points earned this week toward the goal, a progress bar, "X pts to go", a live
+  countdown to Monday's reset, and **25/50/75/100% milestone badges** (100% = a
+  golden 👑 crown). `pointGoal: 0` hides the header entirely.
+- **Repeating / scheduled tasks** — a task can be set to **recur** (complete it and
+  the next occurrence spawns automatically) or to stay **hidden until a future
+  start time** (a one-time "buy milk tomorrow"). The next copy is always created
+  **unassigned**, so each occurrence is a fresh claim.
+- **Admin form** — add/edit/delete tasks. Editing a task's content *or* its
+  schedule is allowed only while it is still `Pending`; once started, the content
+  and schedule lock (status can still move).
 - **Auto-archive** — completed tasks older than `logPruneDays` are moved out of the
   live file into `boards/<key>.archive.json`, so the working JSON never grows
   unbounded.
@@ -171,7 +176,9 @@ omit is filled from built-in defaults, so a board file can be minimal.
   "created": "2026-11-17T20:07:31+00:00",
   "started": "2026-11-17T20:33:09+00:00",
   "completed": "2026-11-17T20:33:42+00:00",
-  "assignee": "Chris"
+  "assignee": "Chris",
+  "repeat": { "every": 1, "unit": "days" },
+  "startUntil": "2026-11-20T14:00:00+00:00"
 }
 ```
 
@@ -186,6 +193,12 @@ omit is filled from built-in defaults, so a board file can be minimal.
 | `started` | Set on a `Pending → InProgress` transition; cleared if moved back to `Pending`. |
 | `completed` | Set when the task lands in `Completed`. |
 | `assignee` | Optional; one of the board's `workers`. Absent = unassigned. |
+| `repeat` | **Optional, v1.2.** `{ every: int≥1, unit: "hours"\|"days"\|"weeks" }`. When present and the task is completed, the API spawns a fresh **Pending** copy with `startUntil = completed_at + every·unit`. Absent = one-time. |
+| `startUntil` | **Optional, v1.2.** ISO-8601 "available from". Past/absent = show now; future = the task sits in `Pending` but is **hidden on the board** until the time arrives (also powers one-time future tasks). |
+
+Both `repeat` and `startUntil` are **additive and absent by default**, so legacy
+board files need no migration — old tasks simply have neither field and behave
+exactly as before.
 
 ---
 
@@ -200,18 +213,33 @@ All endpoints are under `/api.php`, all bodies/responses are JSON.
 | `GET` | `/api.php` | Same, for the **default** board. |
 | `GET` | `/api.php?board=<key>&status=Pending` | Filter the returned tasks by status. |
 | `POST` | `/api.php?board=<key>` | Create a task: `{ title, duration, description?, status?, assignee? }`. New tasks start in `Pending`. |
-| `PATCH` / `PUT` | `/api.php?board=<key>` | Update `{ id, … }` — any of `status`, `title`, `description`, `duration`, `assignee`. |
+| `PATCH` / `PUT` | `/api.php?board=<key>` | Update `{ id, … }` — any of `status`, `title`, `description`, `duration`, `assignee`, `repeat`, `startUntil`. |
 | `DELETE` | `/api.php?board=<key>&id=<id>` | Delete a task. |
 
 **Rules enforced by the API:**
 
-- **Content edits (title/description/duration) are allowed only while a task is
-  `Pending`.** Once it starts (or moves to any other status) its content is locked
-  — a content edit on a non-Pending task returns `403`.
-- **Status and assignee are "moves"**, allowed at any time.
+- **Content edits (title/description/duration) and schedule edits (`repeat` /
+  `startUntil`) are allowed only while a task is `Pending`.** Once it starts (or
+  moves to any other status) its content and schedule are locked — such an edit on
+  a non-Pending task returns `403`.
+- **Status is a "move"**, allowed at any time.
 - **Lifecycle stamps** are automatic: `started` on `Pending → InProgress`
   (cleared when moved back to `Pending`), `completed` when it lands in
   `Completed`.
+- **Owner lock (v1.2):** a `PATCH` that sets `assignee` on a task whose *original*
+  status is `Completed` is refused with `403` ("owner locked — a completed task's
+  owner cannot be changed"). The check reads the pre-mutation status, so a combined
+  "move out of Completed + reassign" cannot bypass it; a refused change is rejected
+  before the board is saved. (Pending / InProgress / Halted can still be reassigned.)
+- **Delete lock (v1.2):** a `DELETE` of a `Completed` task is refused with `403`
+  ("cannot delete — a completed task is locked and permanent"), checked before any
+  mutation. A completed task is permanent.
+- **Spawn on complete (v1.2):** when a task carrying a `repeat` spec transitions
+  into `Completed`, the API appends a fresh **independent `Pending`** copy (same
+  title/description/duration/`repeat`) with `startUntil = completed_at + every·unit`,
+  written in the **same atomic save** as the parent. The spawned copy is
+  **unassigned** by design, and the response includes a `spawned` field so the UI
+  can acknowledge it. A one-time task (no `repeat`) spawns nothing.
 - **Estimates snap** to the nearest `durationOptions` value; titles cap at 500
   chars, descriptions at `descMaxChars`.
 - **Unknown board key** → falls back to the default. **Unknown task id** → `404`.
@@ -250,7 +278,7 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   `tasks.json` and you have everything. `boards/<key>.archive.json` files are
   created automatically as old completions are pruned — back those up too if you
   keep them.
-- **This repo is a point-in-time snapshot of version 1.0.** The live staging
+- **This repo is a point-in-time snapshot of version 1.2.** The live staging
   board's JSON (the kids' current tasks) is a **separate working copy** and is
   **not** kept in sync with the repo automatically — commit/publish a new version
   only when you intend to snapshot the data.
@@ -261,9 +289,54 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
 
 ## Roadmap / in progress
 
-- **1.1 — Team-points milestone badges** (25/50/75/100% that light up as the
-  weekly goal is approached; 100% = a golden crown). In progress on the dev board,
-  **not** part of this 1.0 release.
+- **iPad read-only gating** (User-Agent based) — **on hold**; Michael is testing
+  the live app with the kids, so 8085/8086 stay fully writable until he says
+  otherwise.
+- **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
+- Nothing else in progress — **1.2 is the current release.**
+
+---
+
+## Revisions
+
+### v1.2 — 2026-11-19
+- **Feature — repeating / scheduled tasks.** Two new optional per-task fields,
+  `repeat` (`{every, unit: hours|days|weeks}`) and `startUntil` (ISO-8601
+  "available from"), both additive/absent-by-default (no migration). Completing a
+  repeating task **spawns the next occurrence** server-side (a fresh, **unassigned**
+  `Pending` copy at `completed_at + every·unit`, in the same atomic save). A task
+  can also be a **one-time future task** hidden until its `startUntil` arrives.
+  Admin UI: one quiet, collapsed **"Schedule"** control ("Available from" + a
+  **Repeat** toggle); the board hides future tasks and shows a `↻ N` chip on
+  recurring ones. See the [task fields](#3-a-task) table.
+- **Bug fix — completed tasks: owner is locked.** Reassigning a `Completed` task is
+  refused (`403`); the check reads the pre-mutation status so a combined move+
+  reassign can't bypass it. Board shows the owner as a 🔒 lock on completed cards.
+- **Bug fix — completed tasks cannot be deleted.** A `DELETE` of a `Completed` task
+  is refused (`403`, it's permanent). Board shows the delete ✕ as a 🔒 lock.
+- **Cosmetic:** fixed the Schedule chevron (a literal `\u25be` was rendering
+  instead of ▾), kept the repeat spec on one line, and removed a stray "All tasks"
+  section from the admin add/edit page (which had been throwing
+  "Can't find variable: n").
+
+### v1.1 — 2026-11-18
+- **Team-points milestone badges** (25/50/75/100%) in the free space between the
+  points figures, 100% = a golden 👑 crown; the whole banner still hides when the
+  goal is 0.
+- **Static / read-only fallback** (carried from v1.0.1): when `api.php` can't run
+  (GitHub Pages, a static host, a downloaded copy), the UI loads the committed JSON
+  and shows a "read-only preview" banner instead of an empty board.
+
+### v1.0.1 — 2026-11-18
+- Static / read-only fallback introduced so the GitHub Pages showcase renders boards
+  instead of a blank board.
+
+### v1.0 — 2026-11-18
+- Initial public release: multi-board Kanban (Pending / InProgress / Halted /
+  Completed), drag-and-drop between columns, per-board effort estimates (days or
+  minutes), team-points goal with a live progress bar, a Completed-items log with
+  on/off/over-estimate coloring, worker assignment, an admin editor, and a static
+  registry of boards.
 
 ---
 

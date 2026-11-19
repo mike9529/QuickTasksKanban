@@ -217,6 +217,15 @@
       const now = Date.now();
       STATUSES.forEach((s) => {
         let inStatus = tasks.filter(t => t.status === s.key);
+        // Scheduled tasks: a task with a future startUntil stays in the JSON but is
+        // hidden from its column until that time arrives. Once startUntil passes it
+        // shows normally. Only affects Pending (a task that has started/finished has no
+        // meaningful "available from" gate).
+        inStatus = inStatus.filter((t) => {
+          if (t.status !== "Pending" || t.startUntil == null) return true;
+          const gate = Date.parse(String(t.startUntil));
+          return !(Number.isNaN(gate) ? false : gate > now);
+        });
         // Completed column shows only the configured window; older ones move to the log.
         if (s.key === "Completed") {
           inStatus = inStatus.filter(t => inCompletedWindow(t, now));
@@ -281,11 +290,23 @@
       card.dataset.id = t.id;
       const hasDesc = !!(t.description && String(t.description).trim());
       // Assignee tag: shown for any active task (so you always see who owns it),
-      // or for a Pending task that already has a worker. Tapping it reassigns.
+      // or for a Pending task that already has a worker. Tapping it reassigns --
+      // EXCEPT a Completed task: its owner is frozen, so the tag renders locked
+      // (no pointer, no picker) the same way the edit pencil locks.
       const assignee = t.assignee || "";
       const showAssignee = assignee || t.status !== "Pending";
+      const ownerLocked = t.status === "Completed";
+      // Repeat chip: a small "\u21bb 1d" indicator when a task carries a repeat spec,
+      // so a recurring chore reads as recurring at a glance. The unit short-maps to
+      // h/d/w. It is purely informational; the actual spawn happens server-side on
+      // completion, and the spawned copy is unassigned.
+      const rep = (t.repeat && typeof t.repeat === 'object') ? t.repeat : null;
+      const repShort = rep ? (rep.every + ' ' + ({hours:'h', days:'d', weeks:'w'}[rep.unit] || rep.unit)) : '';
+      const repeatChip = rep
+        ? `<span class="repeat-chip" title="Repeats every ${rep.every} ${rep.unit} \u2014 a new (unassigned) copy is created when this one is completed">\u21bb ${repShort}</span>`
+        : "";
       const assigneeTag = showAssignee
-        ? `<div class="assignee ${assignee ? "assigned" : "unassigned"}" data-id="${esc(t.id)}" title="${assignee ? "Assigned to " + esc(assignee) + " \u2014 tap to change" : "Unassigned \u2014 tap to assign"}"><span class="assignee-name">${assignee ? esc(assignee) : "Unassigned"}</span></div>`
+        ? `<div class="assignee ${ownerLocked ? 'locked' : assignee ? 'assigned' : 'unassigned'}" data-id="${esc(t.id)}" title="${ownerLocked ? 'Owner locked \u2014 a completed task\u2019s owner cannot be changed' : assignee ? 'Assigned to ' + esc(assignee) + ' \u2014 tap to change' : 'Unassigned \u2014 tap to assign'}"><span class="assignee-name">${assignee ? esc(assignee) : 'Unassigned'}</span></div>`
         : "";
       card.innerHTML =
         `${assigneeTag}
@@ -293,12 +314,17 @@
          ${hasDesc ? `<button class="desc-toggle" title="Show description" aria-label="Show description">&gt;</button>` : ""}
          ${hasDesc ? `<div class="desc" hidden>${esc(t.description)}</div>` : ""}
          <div class="meta">
-           ${durationBadge(t.duration != null ? t.duration : t.days)}
+           <span class="meta-left">
+             ${repeatChip}
+             ${durationBadge(t.duration != null ? t.duration : t.days)}
+           </span>
            <span class="meta-actions">
              ${t.status === "Pending"
                ? '<button class="edit" title="Edit task" aria-label="Edit task">✎</button>'
                : '<span class="edit locked" title="Locked — only Pending tasks can be edited" aria-label="Locked">🔒</span>'}
-             <button class="del" title="Delete task" aria-label="Delete task">✕</button>
+             ${t.status === "Completed"
+               ? '<span class="del locked" title="Locked — completed tasks cannot be deleted" aria-label="Locked">🔒</span>'
+               : '<button class="del" title="Delete task" aria-label="Delete task">✕</button>'}
            </span>
          </div>`;
 
@@ -348,18 +374,26 @@
         leftSource = false;
       });
 
-      card.querySelector(".del").addEventListener("click", async (e) => {
-        e.stopPropagation();
-        // Guard the permanent delete with a confirm modal.
-        if (await confirmDelete(t)) await deleteTask(t.id);
-      });
+      const delEl = card.querySelector(".del");
+      if (delEl) {
+        delEl.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          // Delete lock: a completed task is permanent -- refuse (also enforced by api.php).
+          if (t.status === "Completed") return;
+          // Guard the permanent delete with a confirm modal.
+          if (await confirmDelete(t)) await deleteTask(t.id);
+        });
+      }
 
       // Tapping the assignee tag opens the worker picker to reassign. It must not
       // start a card drag or trigger the delete/edit handlers, so stop everything.
       const assigneeEl = card.querySelector(".assignee");
       if (assigneeEl) {
+        // Completed tasks carry the owner lock: the picker must not open.
+        const completedLocked = t.status === "Completed";
         assigneeEl.addEventListener("click", (e) => {
           e.stopPropagation();
+          if (completedLocked) return;
           // Reassigning keeps the task in its CURRENT column -- pass its live
           // status as the target so a tag tap never moves it elsewhere.
           const tt = tasks.find(x => x.id === t.id) || t;
@@ -523,6 +557,13 @@
     async function deleteTask(id) {
       if (STATIC) {
         alert("Read-only preview \u2014 task changes are only available in the live app.");
+        return;
+      }
+      // Delete lock (defense in depth; api.php enforces it too): a completed task
+      // is permanent, so never even attempt to delete it from the client.
+      const t = tasks.find(x => x.id === id);
+      if (t && t.status === "Completed") {
+        alert("Cannot delete \u2014 a completed task is locked and permanent.");
         return;
       }
       const r = await fetch(apiUrl(currentBoard) + "&id=" + encodeURIComponent(id), { method: "DELETE" });

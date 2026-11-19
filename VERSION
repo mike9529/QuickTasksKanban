@@ -1,9 +1,99 @@
-QuickTasks — Version 1.1
-Date: 2026-11-18
-Status: RELEASED — synced to staging (8086) and pushed to GitHub (main + v1.0 tag moved).
+QuickTasks — Version 1.2
+Date: 2026-11-19
+Status: RELEASED — synced to staging (8086, CODE ONLY) and pushed to GitHub
+        (main + v1.2 tag). Data (boards/, boards.json, tasks.json) was NOT
+        touched — the kids own the live data; the repeat fields are additive so
+        no migration was needed.
 
+--------------------------------------------------------------------------------
+v1.2 changes (vs v1.1):
+--------------------------------------------------------------------------------
+  FEATURE — Repeating / scheduled tasks ("set it and forget it"):
+     - Two NEW optional per-task fields, both ADDITIVE and absent by default, so
+       legacy tasks are unchanged (NO migration) and the kids' board files stay
+       byte-identical:
+         * `repeat`     : { every:int>=1, unit:"hours"|"days"|"weeks" }
+         * `startUntil` : ISO-8601 "available from" (past/absent = show now).
+     - A task can be a ONE-TIME FUTURE task (hidden until startUntil arrives, e.g.
+       "buy milk tomorrow") OR a RECURRING task (e.g. "empty dishwasher" every day).
+     - Spawn on complete (SERVER-SIDE, authoritative): in api.php's PATCH handler,
+       when a task carrying a `repeat` spec transitions into Completed, a fresh,
+       INDEPENDENT Pending copy is appended (same title/description/duration/
+       repeat) with startUntil = completed_at + every*unit. It is written in the
+       SAME atomic save as the parent (both persist together), is UNASSIGNED by
+       design (each occurrence is a fresh claim for the kids), and the response
+       carries a `spawned` field so the UI can acknowledge it. A one-time task
+       (no repeat) spawns nothing.
+     - Rescheduling: a Pending task's startUntil / repeat can be changed via PATCH;
+       it is LOCKED once the task has started (same Pending-only rule as content
+       edits — a non-Pending reschedule returns 403).
+     - UI (admin.html): one quiet "Schedule" control, COLLAPSED by default
+       ("None" = create now, no repeat). Tapping it reveals two rows — "Available
+       from" (datetime-local, defaults to now) and a Repeat toggle (Every [n]
+       [hour/day/week], off by default). Only sent to the server when meaningful,
+       so a plain task gains neither key. Edit mode prepopulates both from the
+       task; add mode resets to defaults.
+     - UI (index.html): the Pending filter skips tasks whose startUntil is still in
+       the future; a small "↻ N{h/d/w}" chip renders on cards that carry a repeat
+       spec so a recurring chore reads as recurring at a glance.
+     - Timezone story: the browser converts the local datetime-local value to a UTC
+       ISO string before sending; the server stores everything in UTC 'c' format
+       (matching created/completed/started) and computes the next occurrence from
+       completed_at + delta. No offset drift.
+     - Verified on dev 8085 (24/24 automated checks on a throwaway `scratch` board,
+       then removed): plain task gains no keys; future startUntil hidden / past
+       shown; a completed repeating task spawns an UNASSIGNED copy at
+       completed_at+1h that persists; a one-time completion spawns nothing;
+       rescheduling a non-Pending task -> 403. Kids' boards left byte-identical.
+
+  BUG FIX 1 — Completed tasks: owner is locked:
+     A task's owner (assignee) can no longer be changed once the task is Completed.
+     - api.php: a PATCH that sets `assignee` is refused (HTTP 403, "owner locked —
+       a completed task's owner cannot be changed") when the task's ORIGINAL status
+       is Completed — including a combined "move out of Completed + reassign in the
+       same request" (the check reads the pre-mutation status, so it can't slip
+       past). A refused change is rejected before the board is saved (no trace).
+     - index.html: a Completed task shows its owner as a 🔒 locked tag; tapping it
+       does nothing (the reassign picker won't open). Pending/InProgress/Halted can
+       still be reassigned freely, just like a card move.
+     - admin.html: already safe — its edit form only opens for Pending tasks.
+     - css/style.css: new .assignee.locked (frozen look).
+     - Verified on dev 8085: reassign / unassign / combined-move on a completed task
+       -> 403; reassign on a Pending task -> 200.
+
+  BUG FIX 2 — Completed tasks cannot be deleted:
+     A task that is Completed is permanent and cannot be deleted.
+     - api.php: a DELETE is refused (HTTP 403, "cannot delete — a completed task is
+       locked and permanent") when the task's status is Completed, checked before
+       any mutation.
+     - index.html: a Completed task's delete ✕ renders as a 🔒 lock and the click
+       is refused; deleteTask() also guards it client-side.
+     - admin.html: the row delete renders as a 🔒 lock for Completed tasks; the
+       delete handler is only wired for non-locked rows.
+     - css/style.css: the delete ✕ and the owner tag on a completed card share the
+       SAME 🔒 lock, unified into one rule (not-allowed cursor, --muted color,
+       opacity .55, 14px, 2px 5px) -> new .del.locked / .mini-del.locked.
+     - Verified on dev 8085: delete a completed task (URL + body forms) -> 403;
+       delete a Pending task -> 200; kids' board data untouched.
+
+  COSMETIC (folded in during this release, no version of its own):
+     - Fixed the "Schedule" section chevron: it was rendering a literal "\u25be"
+       (a JS escape in the HTML body) instead of a triangle; swapped to the HTML
+       entity &#x25BE; so it renders as a real ▾ and still rotates 180° on open.
+     - Kept the repeat spec ("1 / every / [unit]") on ONE line: wrapped the number +
+       "every" + unit dropdown in a .repeat-spec group so the unit dropdown no
+       longer wraps to a second line.
+     - Removed the stray "All tasks" section from the admin add/edit page: it was a
+       second .panel rendering a live task list that no longer belonged there and
+       was throwing "Can't find variable: n" (a ${n} in the renderer that should
+       have been t.duration). The section + its loadList() machinery were removed
+       and replaced by a tiny config-only loader so the add/edit form still
+       populates its duration/assignee dropdowns on a plain add.
+
+--------------------------------------------------------------------------------
 v1.1 changes (vs v1.0):
-  1) Team Points milestone badges (25/50/75/100%) using the free space between
+--------------------------------------------------------------------------------
+  1) Team Points milestone badges (25/50/75/100%) in the free space between
      points-left and points-right.
      - New .points-middle div holds the badges in the middle column.
      - 3-column grid (1fr 1fr 1fr): left / middle / right; the progress bar spans
@@ -19,10 +109,21 @@ v1.1 changes (vs v1.0):
      "read-only preview" banner instead of an empty board. On a real PHP host this
      stays dormant and the live API is used exactly as before.
 
-Sync: dev (8085) -> staging (8086) on 2026-11-18; CODE ONLY
-      (index.html, css/style.css, VERSION). Data (boards/, boards.json, tasks.json)
-      NOT touched — kids own staging data.
+--------------------------------------------------------------------------------
+Process notes
+--------------------------------------------------------------------------------
+  - 2026-11-18: an earlier staging publish of the owner-lock was done by mistake and
+    fully reverted from a backup; staging was restored to v1.1. Going forward,
+    changes stay in dev until confirmed, then ALL changes ship together to staging
+    + GitHub only when Michael says so — never auto-published.
+  - 2026-11-19: v1.2 shipped to staging (8086) CODE-ONLY (index.html, css/style.css,
+    api.php, admin.html, VERSION, README.md). Data was NOT overwritten: the repeat
+    feature is additive, so no board migration was needed and the kids' live
+    children.json stayed byte-identical (staging owns the live data).
+
+Sync: dev (8085) -> staging (8086) on 2026-11-19; CODE + README ONLY.
+      Data (boards/, boards.json, tasks.json) NOT touched — kids own it.
 Rollback (see ~/Sites/):
-  - QuickTasks.staging.backup-v1.1-20261118-142106   = full copy of staging
-  - QuickTasks.staging.v1.0-pre-1.1-20261118-142106  = exact v1.0 code before this sync
-  - git: tag v1.0 -> c1ff572 (v1.0 + fallback); this release is HEAD of main.
+  - QuickTasks.staging.backup-repeat-20261118-235522 = staging code before this sync
+  - QuickTasks.staging.backup-v1.1-20261118-142106   = full copy of staging at v1.1
+  - git: tags v1.0 -> c1ff572, v1.1 -> 294a65c; v1.2 = this commit on main.
