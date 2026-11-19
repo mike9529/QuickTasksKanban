@@ -19,7 +19,7 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.26** |
+| **Version** | **1.27** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
@@ -27,7 +27,8 @@ on the PHP built-in server *or* Apache + mod_php.
 | **Repeating tasks** | Yes — a task can recur on its own, sit hidden until a future start time, or lock to a fixed clock time (v1.26) |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.26` (this release) adds clock-anchored repeating tasks
+completed and shipped**. `1.27` (this release) puts the most-recently-completed
+task on top of the Completed column; `1.26` added clock-anchored repeating tasks
 (the drift stop); `1.25` renamed the task's `startUntil`
 "can start on" gate to `canStartOnUTC` (a schema rename, see the migration policy
 below); `1.2` added repeating / scheduled tasks plus two completed-task locks;
@@ -283,7 +284,7 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   `tasks.json` and you have everything. `boards/<key>.archive.json` files are
   created automatically as old completions are pruned — back those up too if you
   keep them.
-- **This repo is a point-in-time snapshot of version 1.26.** The live staging
+- **This repo is a point-in-time snapshot of version 1.27.** The live staging
   board's JSON (the kids' current tasks) is a **separate working copy** and is
   **not** kept in sync with the repo automatically — commit/publish a new version
   only when you intend to snapshot the data.
@@ -324,11 +325,19 @@ here so it's not lost:
   the live app with the kids, so the boards stay fully writable until he says
   otherwise.
 - **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
-- Nothing else in progress — **1.26 is the current release.**
+- Nothing else in progress — **1.27 is the current release.**
 
 ---
 
 ## Revisions
+
+### v1.27 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.27)
+- **Completed column: most-recently-completed on top.** A task that's just been
+  completed now jumps to the **top** of the Completed column and pushes the rest
+  down, so the latest finished chore is the first thing you see. It sorts by
+  `completed` (descending), with `created` as the tiebreaker, so even chores
+  finished in the same moment still land newest-first. The rest of the board is
+  untouched — this only affects the Completed column.
 
 ### v1.26 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.26)
 - **Feature — clock-anchored repeating tasks (the drift stop).** A recurring task now

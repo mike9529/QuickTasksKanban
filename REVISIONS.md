@@ -3,6 +3,18 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.27 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.27)
+A small UX change: the **Completed column now shows the most-recently-completed task
+on top**, so the latest finished chore is the first thing you see and the rest fall
+behind it. No data change, no migration — Completed column only.
+- **`index.html` (render):** when building the Completed column, the filtered in-
+  status list is sorted **descending by `completed`**, with `created` as the
+  tiebreaker, so a task just completed jumps to the top and even chores finished in
+  the same instant still land newest-first. Everything else on the board is
+  unchanged.
+- **Verified on the dev server:** the Completed column renders newest-first (top = most
+  recent completed, bottom = oldest); inline JS parses clean.
+
 ## v1.26 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.26)
 A new feature plus two fixes, shipped together to staging + GitHub:
 **clock-anchored repeating tasks** stop the schedule from drifting later day over day, the card's **double repeat icon** is

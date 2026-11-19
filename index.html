@@ -229,6 +229,11 @@
         // Completed column shows only the configured window; older ones move to the log.
         if (s.key === "Completed") {
           inStatus = inStatus.filter(t => inCompletedWindow(t, now));
+          // v1.27: most-recently-completed on top. Sort by completed desc, tie
+          // broken by created desc, so a task just completed always jumps to the
+          // top and pushes the rest down (even when several share a timestamp).
+          const ts = (x) => { const t = Date.parse(String(x.completed || x.created || "")); return Number.isNaN(t) ? 0 : t; };
+          inStatus.sort((a, b) => ts(b) - ts(a));
         }
         const col = document.createElement("section");
         col.className = "column";

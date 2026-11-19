@@ -1,8 +1,21 @@
-QuickTasks — Version 1.26
+QuickTasks — Version 1.27
 Date: 2026-11-19
-Status: SHIPPED on dev + staging + GitHub (tag v1.26). v1.25 (canStartOnUTC
-        rename) shipped earlier the same day.
+Status: SHIPPED on dev + staging + GitHub (tag v1.27). v1.26 (clock-anchored
+        repeating) and v1.25 (canStartOnUTC rename) shipped earlier the same day.
 
+--------------------------------------------------------------------------------
+v1.27 changes (vs v1.26):
+--------------------------------------------------------------------------------
+  UX — Completed column shows most-recently-completed on top:
+     - A task just completed jumps to the TOP of the Completed column and pushes
+       the rest down, so the latest finished chore is first. Sort is by `completed`
+       (descending), `created` as the tiebreaker, so same-moment completions still
+       land newest-first. Completed column only; the rest of the board is unchanged.
+     - `index.html`: in render(), when building the Completed column, sort the
+       filtered in-status list desc by completed (fallback created). One place,
+       a small self-contained change. No data change, no migration.
+     - Verified on the dev server: the Completed column now renders newest-first
+       (top = most recent completed, bottom = oldest); inline JS parses clean.
 --------------------------------------------------------------------------------
 v1.26 changes (vs v1.25):
 --------------------------------------------------------------------------------
