@@ -19,7 +19,7 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.2** |
+| **Version** | **1.25** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
@@ -27,9 +27,11 @@ on the PHP built-in server *or* Apache + mod_php.
 | **Repeating tasks** | Yes — a task can recur on its own or sit hidden until a future start time |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.2` (this release) adds repeating / scheduled tasks
-plus two completed-task locks; `1.1` added the milestone badges; `1.0` was the
-initial multi-board build. See [Revisions](#revisions) below.
+completed and shipped**. `1.25` (this release) renames the task's `startUntil`
+"can start on" gate to `canStartOnUTC` (schema rename, see the migration policy
+below); `1.2` added repeating / scheduled tasks plus two completed-task locks;
+`1.1` added the milestone badges; `1.0` was the initial multi-board build. See
+[Revisions](#revisions) below.
 
 ---
 
@@ -278,12 +280,38 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   `tasks.json` and you have everything. `boards/<key>.archive.json` files are
   created automatically as old completions are pruned — back those up too if you
   keep them.
-- **This repo is a point-in-time snapshot of version 1.2.** The live staging
+- **This repo is a point-in-time snapshot of version 1.25.** The live staging
   board's JSON (the kids' current tasks) is a **separate working copy** and is
   **not** kept in sync with the repo automatically — commit/publish a new version
   only when you intend to snapshot the data.
 - To add a brand-new board: add it to `boards.json` and drop in
   `boards/<key>.json` (or just let the API create it empty on first write).
+
+### Migration policy — schema always migrates, data never does
+
+Standing rule (Michael, 2026-11-19), applied to every schema change and recorded
+here so it's not lost:
+
+- **Schema migrates everywhere.** When a field is **renamed, restructured, or
+  added to the documented schema** (this README, `VERSION`, `REVISIONS.md`, the
+  code), the **schema definition itself is updated in every copy** — dev, staging,
+  and the GitHub repo — and the change is committed. A renamed field must never
+  leave an old-schema ghost behind in the docs.
+- **Data is never auto-migrated by the app.** The server **never** rewrites the
+  stored JSON to rename a field on its own; it degrades gracefully instead. A
+  field the code no longer recognizes (e.g. an old `startUntil` after v1.25) is
+  **ignored as an unknown key** — an old client simply drops that gate rather than
+  crashing. No 500s, no silent corruption.
+- **Data migration, when it matters, is a deliberate one-time human/agent step** —
+  a scripted key rename on the *live* board files **only where that data actually
+  exists**, with a backup kept. Example: v1.25 renamed `startUntil` →
+  `canStartOnUTC`; dev and the git data carried no such key (nothing to do), but
+  staging's live `children.json` held 11 of them, so those 11 keys were renamed
+  in-place there (JSON-validated, backup retained) so their gates didn't silently
+  die. Dev/git needed no data change; only the location that had the data did.
+- **If the GitHub schema ever falls behind the data** (a field the live data uses
+  that the repo docs don't describe, or a renamed field left undocumented), that's
+  a gap: **open a commit to bring the schema in sync** — don't leave it stale.
 
 ---
 
@@ -293,7 +321,7 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   the live app with the kids, so 8085/8086 stay fully writable until he says
   otherwise.
 - **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
-- Nothing else in progress — **1.2 is the current release.**
+- Nothing else in progress — **1.25 is the current release.**
 
 ---
 
