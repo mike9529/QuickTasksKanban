@@ -1,12 +1,38 @@
-QuickTasks — Version 1.25
+QuickTasks — Version 1.26
 Date: 2026-11-19
-Status: IN DEVELOPMENT (dev only, port 8085). NOT yet synced to staging (8086) or
-        GitHub — ship together when Michael says so.
+Status: SHIPPED on dev + staging + GitHub (tag v1.26). v1.25 (canStartOnUTC
+        rename) shipped earlier the same day.
 
 --------------------------------------------------------------------------------
-v1.25 changes (vs v1.2):
+v1.26 changes (vs v1.25):
 --------------------------------------------------------------------------------
-  RENAME — task field `startUntil` -> `canStartOnUTC` (dev only, this revision):
+  FEATURE — clock-anchored repeating tasks (the drift stop):
+     - PROPOSED BY ALEXANDER O. — the fixed-time anchor idea (rather than
+       relative-to-last-finished) was his and instrumental in the final design.
+     - WHY: the old spawn rule (next = completed_at + interval) made the schedule
+       ratchet LATER every cycle, because the gate was derived from when the task
+       was FINISHED, not a fixed clock. A daily chore done at 08:00 the first day
+       started appearing at 08:15, 08:30, 09:00... over successive days.
+     - FIX: optional `repeat.at` (clock anchor, UTC ISO-8601). When present, the
+       spawn is the first grid line `at + k*interval >= now`, so a late completion
+       CANNOT push the schedule. Future `at` = first appearance (k=0); past `at`
+       snaps to the next line >= now. NO `at` -> legacy completed_at + interval
+       (fully backward compatible, no migration).
+     - UI admin.html: with Repeat ON, "Can start on" doubles as the anchor
+       (sent as repeat.at, defaults to now). No new field added.
+     - UI index.html: repeat chip shows the anchor, e.g. "↻ 07:00 d".
+     - FIX: double repeat icon on the card (the chip template already prints ↻; the
+       anchored branch had prepended a second) -> now a single icon.
+     - SAFETY: api.php now REJECTS unknown board keys on writes (POST/PATCH/PUT/
+       DELETE -> 400) instead of falling back to the default board, so a typo or a
+       throwaway test key can't pollute a live board. GET keeps the default
+       fallback; writes with no ?board= still target the default.
+     - Verified on the dev server (throwaway registered board, then removed): daily
+       past/future anchor, hourly, weekly, legacy no-at (+1 day), one-time no-spawn,
+       drift-proof trio (08:00/11:30/23:00 -> all 07:00); write guard 400s on
+       unknown key while leaving the default board untouched. php -l clean.
+--------------------------------------------------------------------------------
+  RENAME — task field `startUntil` -> `canStartOnUTC` (shipped in v1.25):
      - Makes the direction of the gate unmistakable: a task CANNOT start before
        this UTC datetime. Same behavior as before, just a clearer name.
      - `api.php` (authoritative layer): the JSON key, the
@@ -30,7 +56,7 @@ v1.25 changes (vs v1.2):
        renamed in-place there (11/11, JSON-validated, backup kept) so those gates
        don't silently die. Dev + git data carried no `startUntil`, so no migration
        was needed there — only staging's point-in-time snapshot.
-     - Scope: dev (8085) + staging (8086, code + children.json data) + GitHub
+     - Scope: dev + staging (code + children.json data) + GitHub
        (main @ ed05e53, tag v1.25). Production not published.
 --------------------------------------------------------------------------------
 v1.2 changes (vs v1.1):
@@ -67,7 +93,7 @@ v1.2 changes (vs v1.1):
        ISO string before sending; the server stores everything in UTC 'c' format
        (matching created/completed/started) and computes the next occurrence from
        completed_at + delta. No offset drift.
-     - Verified on dev 8085 (24/24 automated checks on a throwaway `scratch` board,
+     - Verified on the dev server (24/24 automated checks on a throwaway `scratch` board,
        then removed): plain task gains no keys; future startUntil hidden / past
        shown; a completed repeating task spawns an UNASSIGNED copy at
        completed_at+1h that persists; a one-time completion spawns nothing;
@@ -85,7 +111,7 @@ v1.2 changes (vs v1.1):
        still be reassigned freely, just like a card move.
      - admin.html: already safe — its edit form only opens for Pending tasks.
      - css/style.css: new .assignee.locked (frozen look).
-     - Verified on dev 8085: reassign / unassign / combined-move on a completed task
+     - Verified on the dev server: reassign / unassign / combined-move on a completed task
        -> 403; reassign on a Pending task -> 200.
 
   BUG FIX 2 — Completed tasks cannot be deleted:
@@ -100,7 +126,7 @@ v1.2 changes (vs v1.1):
      - css/style.css: the delete ✕ and the owner tag on a completed card share the
        SAME 🔒 lock, unified into one rule (not-allowed cursor, --muted color,
        opacity .55, 14px, 2px 5px) -> new .del.locked / .mini-del.locked.
-     - Verified on dev 8085: delete a completed task (URL + body forms) -> 403;
+     - Verified on the dev server: delete a completed task (URL + body forms) -> 403;
        delete a Pending task -> 200; kids' board data untouched.
 
   COSMETIC (folded in during this release, no version of its own):
@@ -143,14 +169,15 @@ Process notes
     fully reverted from a backup; staging was restored to v1.1. Going forward,
     changes stay in dev until confirmed, then ALL changes ship together to staging
     + GitHub only when Michael says so — never auto-published.
-  - 2026-11-19: v1.2 shipped to staging (8086) CODE-ONLY (index.html, css/style.css,
+  - 2026-11-19: v1.2 shipped to staging CODE-ONLY (index.html, css/style.css,
     api.php, admin.html, VERSION, README.md). Data was NOT overwritten: the repeat
     feature is additive, so no board migration was needed and the kids' live
     children.json stayed byte-identical (staging owns the live data).
 
-Sync: dev (8085) -> staging (8086) on 2026-11-19; CODE + README ONLY.
+Sync: dev -> staging on 2026-11-19; CODE + README ONLY.
       Data (boards/, boards.json, tasks.json) NOT touched — kids own it.
-Rollback (see ~/Sites/):
-  - QuickTasks.staging.backup-repeat-20261118-235522 = staging code before this sync
-  - QuickTasks.staging.backup-v1.1-20261118-142106   = full copy of staging at v1.1
+Rollback (staging + GitHub backups, kept locally):
+  - QuickTasks.backup-pre-v126 = staging code+docs before this sync
+  - QuickTasks.backup-canstartonutc-20261119-060229 = staging before v1.25
+  - git: tag v1.26 = this release on main; v1.25 = previous.
   - git: tags v1.0 -> c1ff572, v1.1 -> 294a65c; v1.2 = this commit on main.

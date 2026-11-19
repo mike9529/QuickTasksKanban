@@ -205,26 +205,37 @@ function now_iso(): string {
 //   "canStartOnUTC" : ISO-8601 UTC timestamp ("can start on" gate). Absent/past =
 //     visible now. The UI hides any task whose canStartOnUTC is still in the
 //     future, but the JSON keeps it.
-//   "repeat"     : { every:int(>=1), unit:"hours"|"days"|"weeks" } | null.
+//   "repeat"     : { every:int(>=1), unit:"hours"|"days"|"weeks", at?:ISO-UTC } | null.
 //     When a task with a repeat lands in Completed, a fresh Pending copy is
-//     spawned (canStartOnUTC = completed_at + every*unit) so recurring chores
-//     re-appear without anyone recreating them. The copy is UNASSIGNED.
+//     spawned so recurring chores re-appear without anyone recreating them. The
+//     copy is UNASSIGNED.
+//     The optional `at` is a clock ANCHOR (an absolute UTC instant). When present,
+//     the next occurrence is the first grid line `at + k*interval` that is >= now,
+//     so the task re-appears at a fixed WALL-CLOCK time (e.g. 07:00 every morning)
+//     regardless of when the previous one was finished -- this stops the schedule
+//     from creeping later day over day. When `at` is absent, the legacy behavior
+//     holds: next = completed_at + every*unit. Both are additive/absent-by-default,
+//     so legacy repeating tasks are untouched (no migration).
 
 // Normalize a repeat spec. null/blank/invalid => one-time (null). A valid spec
 // always returns {every, unit}. An invalid unit falls back to one-time so a bad
 // payload can never create a runaway spawn loop.
 function normalize_repeat($val): ?array {
     if ($val === null || $val === '' || $val === false) return null;
-    $every = 0; $unit = '';
+    $every = 0; $unit = ''; $at = null;
     if (is_array($val)) {
         $every = (int)($val['every'] ?? 0);
         $unit  = strtolower((string)($val['unit'] ?? ''));
+        $at    = normalize_can_start_on_utc($val['at'] ?? null);
     }
     if ($every < 1) $every = 1;
     if (!in_array($unit, ['hours', 'days', 'weeks'], true)) {
         return null; // invalid unit => treat as one-time
     }
-    return ['every' => $every, 'unit' => $unit];
+    // Keep `at` only when it parsed to a real instant; otherwise the chain falls
+    // back to the legacy completed_at + interval behavior.
+    return $at !== null ? ['every' => $every, 'unit' => $unit, 'at' => $at]
+                       : ['every' => $every, 'unit' => $unit];
 }
 
 // "Can start on" gate. null/blank/invalid => visible now (null). Accepts an
@@ -240,7 +251,7 @@ function normalize_can_start_on_utc($val): ?string {
 }
 
 // Advance an ISO timestamp by `every` units and return the new UTC 'c' string.
-// Used to schedule the next occurrence of a repeating task.
+// (Legacy helper; next_occurrence() supersedes this for spawning.)
 function add_interval(string $iso, int $every, string $unit): string {
     $ts = strtotime($iso);
     if ($ts === false) $ts = time();
@@ -248,6 +259,43 @@ function add_interval(string $iso, int $every, string $unit): string {
     $sec = $units[$unit] ?? 86400;
     $ts += max(1, $every) * $sec;
     return (new DateTime('@' . $ts))->format('c');
+}
+
+// Compute the next occurrence of a repeating task and return it as a UTC 'c' string.
+// Clock-anchored: if the repeat spec carries an `at` anchor, the sequence is a fixed
+// grid starting at `at`, and we return the first line `at + k*interval` that is >= now.
+// Because the gate comes from a fixed clock (not from when the last one was finished),
+// a late completion CANNOT push the schedule later -- this is what stops the day-over-day
+// drift. With no `at`, fall back to the legacy behavior: next = completed_at + interval.
+//   - anchor in the future  -> first appearance is the anchor itself (k = 0).
+//   - anchor in the past    -> the next grid line at or after now.
+function next_occurrence(?string $atIso, string $completedAt, int $every, string $unit, string $nowIso): string {
+    $units = ['hours' => 3600, 'days' => 86400, 'weeks' => 604800];
+    $step = (int)($units[$unit] ?? 86400);
+    if ($step < 1) $step = 86400;
+    $nowTs = strtotime($nowIso);
+    if ($nowTs === false) $nowTs = time();
+    // ---- No clock anchor: preserve the LEGACY behavior exactly. ----
+    // A task whose repeat spec has no `at` keeps its old semantics: the next
+    // occurrence is simply completed_at + every*unit. This is what existing
+    // repeating tasks rely on, so they must NOT start spawning early.
+    if ($atIso === null || $atIso === '') {
+        $compTs = strtotime($completedAt);
+        if ($compTs === false) $compTs = $nowTs;
+        return (new DateTime('@' . ($compTs + $step)))->format('c');
+    }
+    // ---- Clock anchor present: build a fixed grid starting at `at`. ----
+    $anchorTs = strtotime((string)$atIso);
+    if ($anchorTs === false) $anchorTs = $nowTs;
+    if ($anchorTs >= $nowTs) {
+        // Anchor hasn't passed yet: the first appearance is the anchor itself.
+        return (new DateTime('@' . $anchorTs))->format('c');
+    }
+    // Anchor is in the past: advance by whole intervals to the first that is >= now.
+    $elapsed = $nowTs - $anchorTs;
+    $k = (int)floor($elapsed / $step);
+    $next = $anchorTs + $k * $step + $step;
+    return (new DateTime('@' . $next))->format('c');
 }
 
 // Snap a requested estimate to the nearest allowed value for this board.
@@ -310,6 +358,19 @@ if ($rawBody !== '') {
 }
 
 $registry = load_registry();
+
+// ---- Write safety: reject an explicitly-requested board key that isn't registered.
+// GET falls back to the default (a harmless read), but a WRITE (POST/PATCH/PUT/DELETE)
+// to an unknown board key would otherwise silently mutate the DEFAULT board -- exactly
+// the hazard that let a throwaway test key pollute a live board. So any write that
+// names a board must name a REAL one, or it gets a 400. Writes with NO ?board= still
+// target the default, which is always registered.
+if (in_array($method, ['POST', 'PATCH', 'PUT', 'DELETE'], true)) {
+    $reqKey = isset($_GET['board']) ? trim((string) $_GET['board']) : '';
+    if ($reqKey !== '' && !in_array($reqKey, array_column($registry['boards'], 'key'), true)) {
+        respond(['error' => 'unknown board key "' . $reqKey . '" -- writes must target a registered board'], 400);
+    }
+}
 
 // ---- Switcher listing: registry + each board's config ------------------------
 if (isset($_GET['boards'])) {
@@ -521,8 +582,11 @@ switch ($method) {
         // The copy is a brand-new independent Pending task: it carries the same
         // title/description/duration and the same repeat spec (so it chains forever),
         // but it is UNASSIGNED -- each occurrence is a fresh claim for the kids. Its
-        // canStartOnUTC is `completed_at + every*unit`, so it stays hidden in Pending
-        // until that time (the UI only shows tasks whose canStartOnUTC has passed).
+        // canStartOnUTC is next_occurrence(at, completed_at, every, unit, now): when the
+        // task carries an `at` clock anchor, the copy re-appears at the fixed wall-clock
+        // time (drift-proof); otherwise it falls back to completed_at + every*unit. The
+        // copy stays hidden in Pending until that time (the UI only shows tasks whose
+        // canStartOnUTC has passed).
         // We append
         // it to $tasks here so the single save_board() below persists BOTH the completed
         // original and the new copy atomically.
@@ -540,7 +604,11 @@ switch ($method) {
                     'status'      => 'Pending',
                     'created'     => $now,
                     'repeat'      => $rep,                 // carried forward -> chains
-                    'canStartOnUTC'  => add_interval($completedAt, $rep['every'], $rep['unit']),
+                    'canStartOnUTC'  => next_occurrence(
+                        $rep['at'] ?? null,
+                        $completedAt,
+                        $rep['every'], $rep['unit'], $now,
+                    ),
                 ];
                 $desc = trim((string)($updated['description'] ?? ''));
                 if ($desc !== '') { $copy['description'] = $desc; }

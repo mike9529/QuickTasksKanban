@@ -50,8 +50,12 @@
 
         <!-- Scheduling: one quiet control, collapsed by default. "None" = create now,
              no repeat. Tapping the toggle reveals two rows: when it first appears
-             (Can start on, defaults to now) and how often it repeats (Repeat). A
-             completed repeating task spawns a fresh UNASSIGNED copy N units later. -->
+             (Can start on, defaults to now) and how often it repeats (Repeat). When
+             Repeat is ON, "Can start on" also becomes the task's CLOCK ANCHOR:
+             a completed repeating task re-appears at that same wall-clock time
+             (drift-proof) rather than creeping later each day. If the anchor is left
+             at "now", it appears immediately and then locks onto the clock. The
+             spawned copy is always UNASSIGNED. -->
         <div class="schedule" id="schedule" data-open="0">
           <button type="button" class="schedule-toggle" id="schedule-toggle" aria-expanded="false">
             <span class="sched-label">Schedule</span>
@@ -123,11 +127,13 @@
     const navAdd = document.getElementById("nav-add");
     const footBoard = document.getElementById("foot-board");
 
-    // ---- Scheduling control (repeating + "available from") ----
+    // ---- Scheduling control (repeating + "can start on" clock anchor) ----
     // Collapsed by default. "None" = create now, no repeat. Tapping the toggle
     // reveals two rows: Can start on (datetime-local, defaults to now) and a
     // Repeat toggle with Every [n] [unit]. On submit we send canStartOnUTC + repeat
-    // only when they're meaningful, so a plain task gains neither key.
+    // only when they're meaningful, so a plain task gains neither key. When Repeat
+    // is ON, the Can start on value is also sent as repeat.at -- the clock anchor
+    // the server uses to re-appear the task at a fixed time instead of drifting.
     const scheduleEl = document.getElementById("schedule");
     const scheduleToggle = document.getElementById("schedule-toggle");
     const scheduleState = document.getElementById("schedule-state");
@@ -207,12 +213,16 @@
     // (add mode). A blank/legacy task shows "None" with the repeat fields off.
     function loadSchedule(task) {
       task = task || {};
-      // Can start on: stored as a UTC ISO string; show it in local time. Default
-      // to "now" when absent so the user sees a sensible starting point.
-      const su = task.canStartOnUTC ? isoToLocalInput(task.canStartOnUTC) : localNowInput();
-      canStartOnUTCEl.value = su;
+      // Can start on: stored as a UTC ISO string; show it in local time. When a task
+      // repeats, its clock anchor (repeat.at) takes precedence so the field shows the
+      // time it re-appears; otherwise default to "now".
+      let anchor;
+      const rep0 = (task.repeat && typeof task.repeat === "object") ? task.repeat : null;
+      if (rep0 && rep0.at) anchor = rep0.at;
+      else if (task.canStartOnUTC) anchor = task.canStartOnUTC;
+      canStartOnUTCEl.value = anchor ? isoToLocalInput(anchor) : localNowInput();
       canStartOnUTCHint.style.opacity = "";
-      const rep = (task.repeat && typeof task.repeat === "object") ? task.repeat : null;
+      const rep = rep0;
       repeatToggle.dataset.on = rep ? "1" : "0";
       if (rep) {
         repeatEveryEl.value = String(rep.every || 1);
@@ -326,7 +336,18 @@
         }
         if (repeatToggle.dataset.on === "1") {
           const every = Math.max(1, Math.min(999, parseInt(repeatEveryEl.value, 10) || 1));
-          payload.repeat = { every: every, unit: repeatUnitEl.value || "days" };
+          // The Can start on value doubles as the clock anchor when repeating: the
+          // server re-appears the task at this fixed time (drift-proof). If the user
+          // left it blank we default the anchor to now so it locks onto the clock.
+          let anchorIso = null;
+          if (canStartOnUTCEl.value !== "") {
+            anchorIso = new Date(canStartOnUTCEl.value).toISOString();
+          } else {
+            const now = new Date();
+            now.setSeconds(0, 0);
+            anchorIso = now.toISOString();
+          }
+          payload.repeat = { every: every, unit: repeatUnitEl.value || "days", at: anchorIso };
         }
       }
       // Editing prepopulates the task; creating always starts in Pending.

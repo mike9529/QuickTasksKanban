@@ -3,11 +3,60 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
-## v1.25 — 2026-11-19 (IN DEVELOPMENT, dev only / port 8085)
+## v1.26 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.26)
+A new feature plus two fixes, shipped together to staging + GitHub:
+**clock-anchored repeating tasks** stop the schedule from drifting later day over day, the card's **double repeat icon** is
+fixed, and a **write guard** keeps an unregistered board key from polluting the
+default board.
+
+### Feature — clock-anchored repeating tasks (the drift stop)
+- **Proposed by Alexander O.** — anchoring a repeat to a *fixed time* (rather than
+  relative to when it was last finished) was his idea and instrumental in the final
+  design. Credit where it's due.
+- **Why:** the old spawn rule set the next occurrence to `completed_at + interval`.
+  Because the gate was derived from *when the task was finished* rather than a fixed
+  clock, every cycle the task appeared after its gate and was finished after its
+  appearance, so the next gate inherited that lateness and the schedule ratcheted
+  later each day. A daily chore finished at 08:00 the first day started appearing at
+  08:15, 08:30, 09:00... over successive days — "daily" in name only.
+- **Fix — a clock anchor `repeat.at`** (optional, additive, UTC ISO-8601). When
+  present, the spawn is the **first grid line `at + k*interval ≥ now`**
+  (`k = floor((now − at) / interval)`), so the sequence is a fixed clock and a late
+  completion **cannot** push it. Future `at` = the first appearance itself (`k = 0`);
+  a past `at` snaps to the next line at or after now. Examples: daily `at = 07:00` →
+  always 07:00; hourly → the next hour on the hour; weekly → the next 07:00 on a
+  7-day grid.
+- **Backward compatible:** with no `at`, the legacy `completed_at + interval` behavior
+  is preserved exactly — existing repeating tasks are **untouched, no migration**
+  (the schema-migrates / data-doesn't policy in practice: new field, additive, absent
+  by default).
+- **UI (`admin.html`):** when **Repeat** is on, the existing **"Can start on"** field
+  doubles as the anchor (sent as `repeat.at`), **defaulting to now** so a new
+  recurring task appears immediately and then locks onto its clock. No new field
+  added — the "start it earlier" knob *is* the anchor.
+- **UI (`index.html`):** the repeat chip shows the anchor, e.g. **`↻ 07:00 d`**.
+- **Fix — double repeat icon:** the chip template already prints the `↻` glyph and the
+  anchored branch had prepended a second one; removed the duplicate so a card shows
+  **one** icon.
+- **Safety — reject unknown board keys on writes (`api.php`):** a write
+  (POST/PATCH/PUT/DELETE) naming a board key not in the registry now returns `400`
+  instead of silently falling back to the **default** board, so a typo or a throwaway
+  test key can no longer pollute a live board. `GET` keeps the default fallback
+  (harmless read); writes with **no** `?board=` still target the default (always
+  registered). Added after a dev test wrote throwaway tasks to the default board via
+  an unregistered key.
+- **Verified on the dev server** (throwaway registered board, then removed): daily past-
+  anchor → next 07:00; daily future-anchor → that anchor; hourly → next hour; weekly
+  → next 07:00 on a 7-day grid; legacy no-`at` → +1 day; one-time future → no spawn;
+  drift-proof trio — finishing at 08:00 / 11:30 / 23:00 all spawned 07:00. The write
+  guard 400s on an unknown key while leaving the default board unchanged. `php -l`
+  clean.
+
+## v1.25 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.25)
 A naming-only refactor: the task "can start on" gate field is renamed **`startUntil`
 -> `canStartOnUTC`** so the direction of the constraint reads clearly — a task
 cannot start before this UTC datetime. Behavior is unchanged; only the name
-changed. **Not yet shipped** — staging (8086) and GitHub are untouched.
+changed. **Not yet shipped** — staging and GitHub are untouched.
 - **`api.php` (authoritative):** the JSON key, the `normalize_start_until()` helper
   (`-> normalize_can_start_on_utc()`), the POST-create + PATCH-reschedule handlers,
   the spawn-on-complete copy key, the "nothing to update" 400 message, and all
@@ -24,12 +73,12 @@ changed. **Not yet shipped** — staging (8086) and GitHub are untouched.
   server as an unknown key, so an old client degrades to "no gate" — no crash, no
   500. `php -l` clean; zero residual `startUntil` / `normalize_start_until` /
   "Available from" references remain in the dev code.
-- **Scope:** dev only (port 8085). Staging (8086) and GitHub were NOT touched; ship
-  together when Michael says so.
+- **Scope:** dev + staging + GitHub (shipped together the same day). The kids' live
+  children.json data was NOT overwritten (the schema change is additive, no migration).
 
 ## v1.2 — 2026-11-19 (RELEASED)
 One new feature (repeating / scheduled tasks) + two small bug fixes + a few
-cosmetic fixes, shipped **together** to staging (8086, code-only) and GitHub
+cosmetic fixes, shipped **together** to staging (code-only) and GitHub
 (main @ 51136d2, tag v1.2). Data was NOT overwritten — the repeat fields are
 additive so the kids' live children.json stayed byte-identical.
 
@@ -65,7 +114,7 @@ future task ("buy milk tomorrow") that stays hidden until its start time arrives
   ISO string (`new Date(...).toISOString()`) before sending; the server stores everything
   in UTC `c` format (matching `created`/`completed`/`started`) and computes the next
   occurrence from `completed_at + delta`. Consistent, no offset drift.
-- **Verified on dev 8085** (24/24 automated checks on a throwaway `scratch` board, then
+- **Verified on the dev server** (24/24 automated checks on a throwaway `scratch` board, then
   removed): plain task gains no keys; future `startUntil` hidden / past shown; a
   completed repeating task spawns an **unassigned** copy at `completed_at + 1h` that
   persists in the store; a one-time completion spawns nothing; rescheduling a

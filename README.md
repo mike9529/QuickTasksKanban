@@ -19,16 +19,17 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.25** |
+| **Version** | **1.26** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
 | **Team points** | Yes — weekly goal with a progress bar + 25/50/75/100% milestone badges |
-| **Repeating tasks** | Yes — a task can recur on its own or sit hidden until a future start time |
+| **Repeating tasks** | Yes — a task can recur on its own, sit hidden until a future start time, or lock to a fixed clock time (v1.26) |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.25` (this release) renames the task's `startUntil`
-"can start on" gate to `canStartOnUTC` (schema rename, see the migration policy
+completed and shipped**. `1.26` (this release) adds clock-anchored repeating tasks
+(the drift stop); `1.25` renamed the task's `startUntil`
+"can start on" gate to `canStartOnUTC` (a schema rename, see the migration policy
 below); `1.2` added repeating / scheduled tasks plus two completed-task locks;
 `1.1` added the milestone badges; `1.0` was the initial multi-board build. See
 [Revisions](#revisions) below.
@@ -53,7 +54,9 @@ below); `1.2` added repeating / scheduled tasks plus two completed-task locks;
 - **Repeating / scheduled tasks** — a task can be set to **recur** (complete it and
   the next occurrence spawns automatically) or to stay **hidden until a future
   start time** (a one-time "buy milk tomorrow"). The next copy is always created
-  **unassigned**, so each occurrence is a fresh claim.
+  **unassigned**, so each occurrence is a fresh claim. In **v1.26** a recurring
+  task can also lock to a **fixed wall-clock time** (a `repeat.at` anchor), so it
+  re-appears at the same time every day instead of drifting later as days go by.
 - **Admin form** — add/edit/delete tasks. Editing a task's content *or* its
   schedule is allowed only while it is still `Pending`; once started, the content
   and schedule lock (status can still move).
@@ -195,7 +198,7 @@ omit is filled from built-in defaults, so a board file can be minimal.
 | `started` | Set on a `Pending → InProgress` transition; cleared if moved back to `Pending`. |
 | `completed` | Set when the task lands in `Completed`. |
 | `assignee` | Optional; one of the board's `workers`. Absent = unassigned. |
-| `repeat` | **Optional, v1.2.** `{ every: int≥1, unit: "hours"\|"days"\|"weeks" }`. When present and the task is completed, the API spawns a fresh **Pending** copy with `canStartOnUTC = completed_at + every·unit`. Absent = one-time. |
+| `repeat` | **Optional, v1.2.** `{ every: int≥1, unit: "hours"\|"days"\|"weeks", at?: ISO-UTC }`. When present and the task is completed, the API spawns a fresh **Pending** copy. With no `at`, the copy's `canStartOnUTC = completed_at + every·unit` (legacy). With an `at` **clock anchor**, the copy's `canStartOnUTC` is the **first grid line `at + k·interval ≥ now`** — a fixed wall-clock time, so a late completion can't push the schedule later (v1.26 drift stop). Absent = one-time. |
 | `canStartOnUTC` | **Optional, v1.2** (renamed from `startUntil` in **v1.25**). ISO-8601 UTC "can start on" gate. Past/absent = show now; future = the task sits in `Pending` but is **hidden on the board** until the time arrives (also powers one-time future tasks). |
 
 Both `repeat` and `canStartOnUTC` are **additive and absent by default**, so legacy
@@ -258,8 +261,8 @@ All endpoints are under `/api.php`, all bodies/responses are JSON.
 
 ```bash
 cd quicktasks
-php -S 0.0.0.0:8085
-# then open http://<host>:8085/index.html
+php -S <host>:<port>   # pick any free port
+# then open http://<host>:<port>/index.html
 ```
 
 **Option B — Apache + mod_php (the staging/prod setup, multi-process):**
@@ -280,7 +283,7 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   `tasks.json` and you have everything. `boards/<key>.archive.json` files are
   created automatically as old completions are pruned — back those up too if you
   keep them.
-- **This repo is a point-in-time snapshot of version 1.25.** The live staging
+- **This repo is a point-in-time snapshot of version 1.26.** The live staging
   board's JSON (the kids' current tasks) is a **separate working copy** and is
   **not** kept in sync with the repo automatically — commit/publish a new version
   only when you intend to snapshot the data.
@@ -318,16 +321,65 @@ here so it's not lost:
 ## Roadmap / in progress
 
 - **iPad read-only gating** (User-Agent based) — **on hold**; Michael is testing
-  the live app with the kids, so 8085/8086 stay fully writable until he says
+  the live app with the kids, so the boards stay fully writable until he says
   otherwise.
 - **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
-- Nothing else in progress — **1.25 is the current release.**
+- Nothing else in progress — **1.26 is the current release.**
 
 ---
 
 ## Revisions
 
-### v1.25 — 2026-11-19 (RELEASING)
+### v1.26 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.26)
+- **Feature — clock-anchored repeating tasks (the drift stop).** A recurring task now
+  can lock to a **fixed wall-clock time** so it re-appears at the same time every
+  cycle instead of creeping later day over day.
+  - **Proposed by Alexander O.** — the idea of anchoring a repeat to a *fixed time*
+    (rather than relative to when it was last finished) was his, and it was
+    instrumental in landing the final design. Credit where it's due.
+  - **The problem (why):** the old spawn rule set the next occurrence to
+    `completed_at + interval`. Because the gate was derived from *when the task was
+    finished* (not a fixed clock), every cycle the task appeared *after* the gate
+    and got finished *after* its appearance, so the next gate inherited that
+    lateness and the schedule ratcheted later each day. A daily chore finished at
+    08:00 the first day would be appearing at 08:15, 08:30, 09:00… over successive
+    days. It was "daily" in name only.
+  - **The fix — a clock anchor `repeat.at`** (optional, additive, UTC ISO-8601). When
+    present, the spawn is the **first grid line `at + k·interval ≥ now`**
+    (`k = floor((now − at) / interval)`), so the sequence is a fixed clock and a late
+    completion **cannot** push it. Examples: `at = 07:00`, daily → always 07:00;
+    hourly → the next hour on the hour; weekly → the next 07:00 on a 7-day grid. A
+    future `at` is the first appearance itself (`k = 0`); a past `at` snaps to the
+    next line at or after now.
+  - **Backward compatible:** with no `at`, the legacy `completed_at + interval`
+    behavior is preserved exactly — existing repeating tasks are **untouched, no
+    migration**. (This is the schema-migrates / data-doesn't policy in practice: the
+    new field is additive and absent by default.)
+  - **UI (`admin.html`):** when the **Repeat** toggle is on, the existing **"Can start
+    on"** field doubles as the clock anchor (sent as `repeat.at`); it **defaults to
+    now**, so a new recurring task appears immediately and then locks onto its clock.
+    No new field was added — the knob you reach for to "start it earlier" is the one
+    that sets the anchor.
+  - **UI (`index.html`):** the repeat chip shows the anchor, e.g. **`↻ 07:00 d`**,
+    so a recurring chore reads its re-appearance time at a glance.
+  - **Fix — double repeat icon:** the chip template already prints the `↻` glyph; the
+    anchored branch had prepended a second one. Removed the duplicate so a card shows
+    **one** icon.
+  - **Safety — reject unknown board keys on writes (`api.php`):** a write
+    (POST/PATCH/PUT/DELETE) that names a board key not in the registry now returns
+    `400` instead of silently falling back to the **default** board. A typo or a
+    throwaway test key can no longer pollute a live board. `GET` keeps the default
+    fallback (a harmless read), and writes with **no** `?board=` still target the
+    default (always registered). This guard was added after a dev test wrote throwaway
+    tasks to the default board via an unregistered key.
+  - **Verified on the dev server** (throwaway registered board, then removed): daily past-
+    anchor → next 07:00; daily future-anchor → that anchor; hourly → next hour; weekly
+    → next 07:00 on a 7-day grid; legacy no-`at` → +1 day; one-time future → no spawn;
+    and a drift-proof trio — finishing at 08:00 / 11:30 / 23:00 all spawned 07:00. The
+    write guard was verified to 400 on an unknown key while leaving the default board
+    unchanged. `php -l` clean.
+
+### v1.25 — 2026-11-19 (RELEASED, on dev + staging + GitHub)
 - **Rename — `startUntil` → `canStartOnUTC`.** The task's "can start on" gate field
   is renamed so the direction of the constraint reads clearly: a task cannot start
   before this **UTC** datetime. Behavior is unchanged — only the name changed.
@@ -347,7 +399,7 @@ here so it's not lost:
     key, so an old client degrades to "no gate" — no crash, no 500. `php -l` clean;
     zero residual `startUntil` / `normalize_start_until` / "Available from" references
     remain in the dev code.
-  - **Verified on dev 8085** (throwaway `scratch` board, then removed): create a
+  - **Verified on the dev server** (throwaway `scratch` board, then removed): create a
     future-gate task; create a past-gate + repeat task; reschedule a Pending task;
     clear via explicit `null`; complete → spawned copy carries `canStartOnUTC`
     (`completed_at + every·unit`), is unassigned, and does **not** carry a legacy

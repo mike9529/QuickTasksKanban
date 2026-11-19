@@ -296,14 +296,35 @@
       const assignee = t.assignee || "";
       const showAssignee = assignee || t.status !== "Pending";
       const ownerLocked = t.status === "Completed";
-      // Repeat chip: a small "\u21bb 1d" indicator when a task carries a repeat spec,
-      // so a recurring chore reads as recurring at a glance. The unit short-maps to
-      // h/d/w. It is purely informational; the actual spawn happens server-side on
-      // completion, and the spawned copy is unassigned.
+      // Repeat chip: a small "↻ 07:00 daily" indicator when a task carries a repeat
+      // spec, so a recurring chore reads as recurring at a glance. When the task has a
+      // clock anchor (repeat.at), we show the wall-clock time it re-appears (drift-proof);
+      // otherwise just the cadence. It is purely informational; the actual spawn happens
+      // server-side on completion, and the spawned copy is unassigned.
       const rep = (t.repeat && typeof t.repeat === 'object') ? t.repeat : null;
-      const repShort = rep ? (rep.every + ' ' + ({hours:'h', days:'d', weeks:'w'}[rep.unit] || rep.unit)) : '';
+      let repShort = '';
+      let repTitle = '';
+      if (rep) {
+        const unitWord = ({hours:'hour', days:'day', weeks:'week'}[rep.unit] || rep.unit);
+        const everyWord = rep.every + ' ' + unitWord + (Number(rep.every) === 1 ? '' : 's');
+        repShort = rep.every + ' ' + ({hours:'h', days:'d', weeks:'w'}[rep.unit] || rep.unit);
+        if (rep.at) {
+          try {
+            const atD = new Date(rep.at);
+            const hh = String(atD.getHours()).padStart(2, '0');
+            const mm = String(atD.getMinutes()).padStart(2, '0');
+            // The chip template already prints the ↻ icon, so repShort carries only
+            // the time + cadence (NO leading ↻) to avoid a double icon.
+            repShort = hh + ':' + mm + ' ' + ({hours:'h', days:'d', weeks:'w'}[rep.unit] || rep.unit);
+            repTitle = 'Re-appears at ' + hh + ':' + mm + ' every ' + everyWord +
+                       ' — a new (unassigned) copy is created when this one is completed';
+          } catch (e) { repTitle = 'Repeats every ' + everyWord; }
+        } else {
+          repTitle = 'Repeats every ' + everyWord + ' — a new (unassigned) copy is created when this one is completed';
+        }
+      }
       const repeatChip = rep
-        ? `<span class="repeat-chip" title="Repeats every ${rep.every} ${rep.unit} \u2014 a new (unassigned) copy is created when this one is completed">\u21bb ${repShort}</span>`
+        ? `<span class="repeat-chip" title="${repTitle}">↻ ${repShort}</span>`
         : "";
       const assigneeTag = showAssignee
         ? `<div class="assignee ${ownerLocked ? 'locked' : assignee ? 'assigned' : 'unassigned'}" data-id="${esc(t.id)}" title="${ownerLocked ? 'Owner locked \u2014 a completed task\u2019s owner cannot be changed' : assignee ? 'Assigned to ' + esc(assignee) + ' \u2014 tap to change' : 'Unassigned \u2014 tap to assign'}"><span class="assignee-name">${assignee ? esc(assignee) : 'Unassigned'}</span></div>`
