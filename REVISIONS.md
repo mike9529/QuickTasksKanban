@@ -143,3 +143,10 @@ dormant and the live API is used exactly as before.
   ship together to staging + GitHub when Michael says so — never auto-published.
 - **Versioning:** the two bug fixes above are treated as small fixes, not a full
   `.x` bump. Their version (v1.2 or folded into a future release) is Michael's call.
+- **Staging data migration (v1.25 publish):** staging's live `boards/children.json`
+  carried 11 `startUntil` tasks (e.g. "Empty Dishwasher", "iReady Reading"). Because
+  the server now ignores `startUntil`, those gates would have silently died, so the
+  key was renamed in-place in staging's `children.json` (11/11 keys, JSON-validated,
+  backup kept at `QuickTasks.backup-canstartonutc-*/`). Dev data and the committed
+  git data never carried the key, so no migration was needed there — only staging's
+  point-in-time snapshot.

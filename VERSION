@@ -25,7 +25,13 @@ v1.25 changes (vs v1.2):
        unknown key, so an old client degrades to "no gate" — no crash, no 500.
      - `php -l` clean; zero residual `startUntil` / `normalize_start_until` /
        "Available from" references remain in the dev code.
-     - Scope: dev only (port 8085). Staging (8086) and GitHub were NOT touched.
+     - Staging data migration: staging's LIVE children.json carried 11
+       `startUntil` tasks (e.g. "Empty Dishwasher", "iReady Reading"); the key was
+       renamed in-place there (11/11, JSON-validated, backup kept) so those gates
+       don't silently die. Dev + git data carried no `startUntil`, so no migration
+       was needed there — only staging's point-in-time snapshot.
+     - Scope: dev (8085) + staging (8086, code + children.json data) + GitHub
+       (main @ ed05e53, tag v1.25). Production not published.
 --------------------------------------------------------------------------------
 v1.2 changes (vs v1.1):
 --------------------------------------------------------------------------------
