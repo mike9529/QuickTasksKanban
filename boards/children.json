@@ -10,7 +10,7 @@
             45,
             60
         ],
-        "completedWindowDays": 2,
+        "completedWindowDays": 1,
         "pollMs": 15000,
         "descMaxChars": 140,
         "statuses": [
@@ -55,8 +55,7 @@
             "description": "",
             "duration": 15,
             "status": "Pending",
-            "created": "2026-11-17T20:17:39+00:00",
-            "assignee": "Chris"
+            "created": "2026-11-17T20:17:39+00:00"
         },
         {
             "id": "tad72a50e7070",
@@ -64,8 +63,7 @@
             "description": "",
             "duration": 5,
             "status": "Pending",
-            "created": "2026-11-17T20:17:46+00:00",
-            "assignee": "Alex"
+            "created": "2026-11-17T20:17:46+00:00"
         },
         {
             "id": "td8be8907caa0",
@@ -182,11 +180,10 @@
             "title": "Help lower Christmas boxes",
             "description": "",
             "duration": 10,
-            "status": "Completed",
+            "status": "InProgress",
             "created": "2026-11-18T12:41:50+00:00",
-            "started": "2026-11-18T15:36:49+00:00",
             "assignee": "Chris",
-            "completed": "2026-11-18T16:04:59+00:00"
+            "started": "2026-11-20T03:50:43+00:00"
         },
         {
             "id": "t2e5fe5f4c271",
@@ -200,23 +197,33 @@
             "completed": "2026-11-18T13:49:54+00:00"
         },
         {
-            "id": "t8e8a88a5c242",
-            "title": "Find sound effect for Completed Task",
-            "description": "The idea is to add a \"SATISFYING\" sound to hear once a task is dropped in completed.  Maybe applause?  Maybe bell ring? etc.",
-            "duration": 5,
-            "status": "Completed",
-            "created": "2026-11-18T13:55:04+00:00",
-            "started": "2026-11-18T14:50:42+00:00",
-            "assignee": "Alex",
-            "completed": "2026-11-18T14:50:58+00:00"
-        },
-        {
-            "id": "tbe98b899d2fb",
-            "title": "Empty Dishwasher",
-            "description": "",
+            "id": "t4970a5b515f9",
+            "title": "Review 1.26 Changes",
+            "description": "- check UI for repeat at specific time\n- check update too",
             "duration": 10,
             "status": "Pending",
-            "created": "2026-11-18T16:05:06+00:00"
+            "created": "2026-11-19T14:19:45+00:00",
+            "canStartOnUTC": "2026-11-19T14:19:00+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "days",
+                "at": "2026-11-19T14:19:00+00:00"
+            }
+        },
+        {
+            "id": "ta215682f1816",
+            "title": "Test Repeating Task Add",
+            "description": "",
+            "duration": 5,
+            "status": "Pending",
+            "created": "2026-11-19T14:20:52+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "days",
+                "at": "2026-11-19T14:20:00+00:00"
+            },
+            "canStartOnUTC": "2026-11-19T14:20:00+00:00",
+            "assignee": "Daddy"
         }
     ]
 }

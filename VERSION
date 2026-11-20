@@ -1,9 +1,36 @@
-QuickTasks — Version 1.29
-Date: 2026-11-19
-Status: SHIPPED on dev + staging + GitHub (tag v1.29). The v1.26/v1.27 batch
-        (clock-anchored repeating, newest-first completed column) shipped earlier
-        the same day; v1.28/v1.29 follow in this update.
+QuickTasks — Version 1.30
+Date: 2026-11-20
+Status: SHIPPED to GitHub (tag v1.30). Data sync + fresh-load guard. No code
+        change to api.php/index.html/admin.html/css; the app behaves exactly as
+        v1.29. This release makes the repo's committed data carry the CURRENT
+        schema (repeat + canStartOnUTC) and adds a CI guard so a fresh pull can
+        never break on first load.
 
+--------------------------------------------------------------------------------
+v1.30 changes (vs v1.29):
+--------------------------------------------------------------------------------
+  DATA SYNC — committed data now matches the live dev schema:
+     - boards/adults.json + boards/children.json updated from the frozen v1.1 demo
+       snapshot to the current dev data, which carries the v1.25/26 + v1.2 fields
+       `canStartOnUTC` and `repeat` (the recurring-task schema). Config, registry,
+       and all code are unchanged; this is a pure data refresh.
+     - The stale, un-referenced flat `tasks.json` was REMOVED. Nothing in
+       api.php / index.html / admin.html ever reads it: the live API loads
+       boards/<key>.json, and the static (GitHub Pages) fallback loads
+       boards.json + boards/<key>.json. It was a leftover and could confuse.
+  GUARD — `scripts/fresh_load_check.php` + `.github/workflows/fresh-load.yml`:
+     - A read-only check that mirrors api.php's cold-start: every data file is
+       valid JSON, the registry exposes its boards, each config merges over
+       DEFAULT_CONFIG with all required keys, no task carries the renamed
+       `startUntil` (must be `canStartOnUTC`), every `repeat` is a sane
+       {every,unit[,at]} (or null), and api.php passes `php -l`. It is run
+       locally and on every push/PR to main, so a bad schema or data commit
+       fails the build instead of shipping a broken fresh pull.
+     - Verified: PASS on the synced v1.30 tree; FAIL on a planted bad board
+       (stale startUntil + unknown status + bad repeat unit).
+  - `boards/adults.json`, `boards/children.json`, `boards.json` (data),
+    `scripts/fresh_load_check.php` + `.github/workflows/fresh-load.yml` (guard),
+    `REVISIONS.md`, `VERSION`.
 --------------------------------------------------------------------------------
 v1.29 changes (vs v1.28):
 --------------------------------------------------------------------------------

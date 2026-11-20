@@ -9,7 +9,7 @@
             4,
             5
         ],
-        "completedWindowDays": 2,
+        "completedWindowDays": 1,
         "pollMs": 15000,
         "descMaxChars": 140,
         "statuses": [
@@ -157,6 +157,58 @@
             "duration": 1,
             "status": "Pending",
             "created": "2026-11-17T20:38:08+00:00"
+        },
+        {
+            "id": "t496648f81e26",
+            "title": "Recurring",
+            "description": "",
+            "duration": 2,
+            "status": "Completed",
+            "created": "2026-11-19T11:36:36+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "hours"
+            },
+            "canStartOnUTC": "2020-01-01T00:00:00+00:00",
+            "completed": "2026-11-19T11:36:36+00:00"
+        },
+        {
+            "id": "t9087b99aa3b4",
+            "title": "Recurring",
+            "duration": 2,
+            "status": "Pending",
+            "created": "2026-11-19T11:36:36+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "hours"
+            },
+            "canStartOnUTC": "2026-11-19T12:36:36+00:00"
+        },
+        {
+            "id": "td503d5d02aff",
+            "title": "Recurring",
+            "description": "",
+            "duration": 2,
+            "status": "Completed",
+            "created": "2026-11-19T11:37:45+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "hours"
+            },
+            "canStartOnUTC": "2020-01-01T00:00:00+00:00",
+            "completed": "2026-11-19T11:37:45+00:00"
+        },
+        {
+            "id": "t97c3924977a6",
+            "title": "Recurring",
+            "duration": 2,
+            "status": "Pending",
+            "created": "2026-11-19T11:37:45+00:00",
+            "repeat": {
+                "every": 1,
+                "unit": "hours"
+            },
+            "canStartOnUTC": "2026-11-19T12:37:45+00:00"
         }
     ]
 }
