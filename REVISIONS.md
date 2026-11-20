@@ -3,6 +3,78 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.29 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.29)
+Two features plus one bug fix, all in the InProgress/Completed area of the board.
+
+### Feature — live InProgress timer (stopwatch) on the card
+- Every task sitting in **InProgress** shows a small elapsed-time pill in its meta
+  row, formatted `hh:mm:ss.d` (hours, minutes, seconds, decisecond). Leading
+  zero-groups collapse: 27.5s reads `27.5`, 27m15.1s reads `27:15.1`, and it rolls
+  up to `1:05:02.3` past an hour. Pending/Halted/Completed cards show nothing.
+- **Origin** is the task's `started` stamp (set on the Pending → InProgress
+  transition in `api.php`), falling back to `created`, then render time, so the
+  pill is always present on an InProgress card.
+- **Refresh:** one global 100ms ticker recomputes every InProgress pill in place
+  (100ms = one decisecond, so the last digit visibly ticks). Because it updates the
+  pill DOM rather than rebuilding the board, it survives the 15s poll re-render and
+  any drag/move, and recomputing from the absolute start each tick means it can't
+  drift even if a frame slips. Guarded on `!STATIC` so the read-only GitHub Pages
+  showcase never runs a stopwatch off a stale `started`.
+- **Aesthetics:** the pill matches the card's chip system (rounded 999px, same
+  meta-row footprint) but is tinted to the InProgress accent with a soft 1s
+  "live" pulse on a dot and `font-variant-numeric: tabular-nums` (plus a
+  `min-width` reserve) so the ticking digits don't jiggle the layout. Respects
+  `prefers-reduced-motion`.
+
+### Bug fix — the move-flash
+- **Symptom:** dragging a task into InProgress briefly flashed a huge elapsed value
+  (e.g. `38:22:30.6` for a task moved ~11s earlier), then corrected a few seconds
+  later. **Cause:** `moveTask` did an optimistic `t.status = "InProgress"` re-render
+  *before* the PATCH returned; at that instant the task had no `started` yet (the
+  server stamps it), so the pill fell back to the task's `created` time
+  (hours/days old) and showed that. **Fix:** the optimistic move now mirrors the
+  server's lifecycle stamping — entering InProgress stamps `started` ≈ now
+  immediately (moving back to Pending clears it, so re-entering restarts fresh),
+  and after the PATCH the card is reconciled from the response (`data.task`, plus
+  any `data.spawned`); a failed PATCH rolls back status/assignee/started/completed.
+  The pill now reads ~0 the instant a task moves in and ticks up from there. Verified
+  headlessly by delaying the PATCH ~1.2s: the value read `0.0` (old bug: `38:22:30.6`).
+
+### Log — Completed-items grid "Added" column → "Done by" owner bubble
+- In the completed-items log below the board, the **Added** column (task `created`
+  date) was removed and replaced with a **Done by** column showing the task's owner,
+  rendered as the **same rounded bubble as the card's owner tag** — a new
+  non-interactive `.log-owner` class that mirrors `.card .assignee` (accent-tinted
+  pill, person glyph, uppercase, rounded 999px) but has no click/lock, since the log
+  is a read-only record. An owned task shows `☗ Chris` (tooltip "Done by Chris"); an
+  unowned task shows a quiet dash (`.log-owner.unassigned`, tooltip "No owner"). The
+  Started / Completed / Days-worked columns are unchanged, so the log's date info is
+  preserved. Verified on the live children board (a temporary owned + unowned
+  completed task, then removed): the owned one rendered the owner bubble and the
+  unowned rendered a dash, matching the card tag.
+- **Files:** `index.html` (timer pill + `fmtTimer` + global ticker in `bootstrap`;
+  log row + "Done by" header), `css/style.css` (`.timer` pill + `timer-pulse`;
+  `.log-owner`).
+- **`api.php` hardening (folded in):** the atomic write now `chmod 0600` after both
+  `save_board()` and `prune_archived()` rename, keeping board data owner-only — the
+  atomic temp file otherwise inherits umask 0644. Server-agnostic (works under Apache
+  and `php -S`). A security improvement, included in this ship.
+
+## v1.28 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.28)
+A cleanup pass: the Completed-column window was already a per-board config variable
+(`config.completedWindowDays`) that the board read dynamically; this removed the
+two magic `|| 2` fallbacks so there's a single named default and the value is
+unambiguously per-board.
+- **`index.html`:** the column filter and the column header both read
+  `config.completedWindowDays ?? DEFAULT_CONFIG.completedWindowDays` (one source of
+  truth — the `DEFAULT_CONFIG` value, 2). Switching `||` → `??` also makes an
+  explicit `0` valid ("hide everything from the column, keep it in the log only")
+  instead of silently coercing back to 2.
+- **Per-board, proven on dev:** setting the window independently on two boards
+  (adults=3 / children=1) rendered different column headers at the same time; the
+  column also tracks 1/2/3 live. No new in-app control yet (a possible follow-up
+  if a settings knob is wanted).
+
 ## v1.27 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.27)
 A small UX change: the **Completed column now shows the most-recently-completed task
 on top**, so the latest finished chore is the first thing you see and the rest fall
@@ -201,9 +273,10 @@ dormant and the live API is used exactly as before.
 - **Staging publish reverted (2026-11-18):** a staging publish of the owner-lock was
   done by mistake and fully reverted from a backup. Staging was restored to the v1.1
   release. Going forward: changes stay in dev until confirmed, then **all** changes
-  ship together to staging + GitHub when Michael says so — never auto-published.
+  ship together to staging + GitHub only on explicit approval — never auto-published.
 - **Versioning:** the two bug fixes above are treated as small fixes, not a full
-  `.x` bump. Their version (v1.2 or folded into a future release) is Michael's call.
+  `.x` bump. Their version (v1.2 or folded into a future release) is a release
+  decision to make when shipping.
 - **Staging data migration (v1.25 publish):** staging's live `boards/children.json`
   carried 11 `startUntil` tasks (e.g. "Empty Dishwasher", "iReady Reading"). Because
   the server now ignores `startUntil`, those gates would have silently died, so the

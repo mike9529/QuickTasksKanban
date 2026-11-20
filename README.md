@@ -19,7 +19,7 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.27** |
+| **Version** | **1.29** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
@@ -27,13 +27,16 @@ on the PHP built-in server *or* Apache + mod_php.
 | **Repeating tasks** | Yes — a task can recur on its own, sit hidden until a future start time, or lock to a fixed clock time (v1.26) |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.27` (this release) puts the most-recently-completed
-task on top of the Completed column; `1.26` added clock-anchored repeating tasks
-(the drift stop); `1.25` renamed the task's `startUntil`
-"can start on" gate to `canStartOnUTC` (a schema rename, see the migration policy
-below); `1.2` added repeating / scheduled tasks plus two completed-task locks;
-`1.1` added the milestone badges; `1.0` was the initial multi-board build. See
-[Revisions](#revisions) below.
+completed and shipped**. `1.29` (this release) adds a live InProgress timer pill
+(`hh:mm:ss.d`, decisecond refresh) and swaps the completed-items log's "Added"
+column for a "Done by" owner bubble, and includes a `chmod 0600` hardening on the
+board writes; `1.28` tidied the Completed-column window into a single per-board
+config variable; `1.27` puts the most-recently-completed task on top of the
+Completed column; `1.26` added clock-anchored repeating tasks (the drift stop);
+`1.25` renamed the task's `startUntil` "can start on" gate to `canStartOnUTC`
+(a schema rename, see the migration policy below); `1.2` added repeating /
+scheduled tasks plus two completed-task locks; `1.1` added the milestone badges;
+`1.0` was the initial multi-board build. See [Revisions](#revisions) below.
 
 ---
 
@@ -284,16 +287,17 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
   `tasks.json` and you have everything. `boards/<key>.archive.json` files are
   created automatically as old completions are pruned — back those up too if you
   keep them.
-- **This repo is a point-in-time snapshot of version 1.27.** The live staging
-  board's JSON (the kids' current tasks) is a **separate working copy** and is
-  **not** kept in sync with the repo automatically — commit/publish a new version
-  only when you intend to snapshot the data.
+- **This repo's code is version 1.29; the board JSON is a point-in-time
+  snapshot as of version 1.27.** The live staging board's JSON (the kids' current
+  tasks) is a **separate working copy** and is **not** kept in sync with the repo
+  automatically — commit/publish a new version only when you intend to snapshot the
+  data.
 - To add a brand-new board: add it to `boards.json` and drop in
   `boards/<key>.json` (or just let the API create it empty on first write).
 
 ### Migration policy — schema always migrates, data never does
 
-Standing rule (Michael, 2026-11-19), applied to every schema change and recorded
+Standing rule (2026-11-19), applied to every schema change and recorded
 here so it's not lost:
 
 - **Schema migrates everywhere.** When a field is **renamed, restructured, or
@@ -321,11 +325,11 @@ here so it's not lost:
 
 ## Roadmap / in progress
 
-- **iPad read-only gating** (User-Agent based) — **on hold**; Michael is testing
-  the live app with the kids, so the boards stay fully writable until he says
+- **iPad read-only gating** (User-Agent based) — **on hold**; the live app is
+  being tested with the kids, so the boards stay fully writable until that is
   otherwise.
 - **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
-- Nothing else in progress — **1.27 is the current release.**
+- Nothing else in progress — **1.29 is the current release.**
 
 ---
 

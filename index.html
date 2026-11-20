@@ -195,7 +195,11 @@
     function inCompletedWindow(t, now) {
       const ref = t.completed || t.created;
       if (!ref) return true; // no timestamp -> keep visible rather than hide
-      const win = (config.completedWindowDays || 2) * 86400000;
+      // The window is the board's own `completedWindowDays` (per-board config, v1.28).
+      // `?? default` keeps an explicit 0 valid (hide all from the column) instead of
+      // silently falling back to 2 the way the old `|| 2` would have.
+      const days = config.completedWindowDays ?? DEFAULT_CONFIG.completedWindowDays;
+      const win = days * 86400000;
       return now - new Date(ref).getTime() <= win;
     }
 
@@ -210,6 +214,52 @@
       const n = Number(d) || 0;
       const icon = config.units === "minutes" ? "⏱" : (config.units === "hours" ? "🕒" : "🗓");
       return `<span class="days">${icon} ${n} ${unitWord(n)}</span>`;
+    }
+
+    // ---- Live InProgress timer -------------------------------------------
+    // A stopwatch for any task sitting in InProgress. Format is hh:mm:ss.d
+    // (deciseconds); leading zero groups are collapsed so 27.5s reads "27.5" and
+    // 27m15.1s reads "27:15.1" (the examples Michael gave). The origin is the
+    // task's `started` stamp (set on the Pending -> InProgress transition); a
+    // missing/invalid one falls back to `created`, then to render time. The start
+    // is stored on the pill as data-start so the single global 100ms ticker can
+    // refresh every InProgress card in place -- no board rebuild per tick.
+    function inprogressTimerPill(t) {
+      let startMs = t.started ? Date.parse(String(t.started)) : NaN;
+      if (isNaN(startMs) && t.created) startMs = Date.parse(String(t.created));
+      if (isNaN(startMs)) startMs = Date.now();
+      return `<span class="timer" data-start="${startMs}" title="Time in progress (since ${new Date(startMs).toLocaleTimeString()})"><span class="timer-dot"></span><span class="timer-val">0.0</span></span>`;
+    }
+    function fmtTimer(ms) {
+      if (!(ms >= 0)) ms = 0;
+      const totalDeci = Math.floor(ms / 100);   // whole deciseconds
+      const d = totalDeci % 10;                 // the decisecond digit (0-9)
+      const totalSec = Math.floor(totalDeci / 10);
+      const s = totalSec % 60;
+      const m = Math.floor(totalSec / 60) % 60;
+      const h = Math.floor(totalSec / 3600);
+      // Collapse leading zero groups: show hours only if > 0, minutes only if an
+      // outer group is present. The seconds.decisecond is always the live group.
+      if (h > 0) return h + ":" + String(m).padStart(2, "0") + ":" + String(s).padStart(2, "0") + "." + d;
+      if (m > 0) return m + ":" + String(s).padStart(2, "0") + "." + d;
+      return s + "." + d;
+    }
+    // One global ticker drives every InProgress pill in place. 100ms = one
+    // decisecond, so the last digit visibly ticks. Elapsed is recomputed from the
+    // absolute start time each tick, so it stays drift-free even if a frame slips.
+    let timerTicker = null;
+    function tickTimers() {
+      const now = Date.now();
+      document.querySelectorAll(".card .timer[data-start]").forEach((el) => {
+        const start = Number(el.dataset.start) || now;
+        const v = el.querySelector(".timer-val");
+        if (v) v.textContent = fmtTimer(now - start);
+      });
+    }
+    function startTimerTicker() {
+      if (timerTicker) return;
+      tickTimers();
+      timerTicker = setInterval(tickTimers, 100);
     }
 
     function render() {
@@ -239,8 +289,11 @@
         col.className = "column";
         col.dataset.status = s.key;
 
+        // Header echoes the board's own window so the column label always matches
+        // the filter above (per-board `completedWindowDays`, v1.28).
+        const cwDays = config.completedWindowDays ?? DEFAULT_CONFIG.completedWindowDays;
         const headLabel = s.key === "Completed"
-          ? `Completed · last ${config.completedWindowDays || 2} day${(config.completedWindowDays || 2) === 1 ? "" : "s"}`
+          ? `Completed · last ${cwDays} day${cwDays === 1 ? "" : "s"}`
           : s.label;
         col.innerHTML =
           `<div class="col-head">
@@ -334,6 +387,8 @@
       const assigneeTag = showAssignee
         ? `<div class="assignee ${ownerLocked ? 'locked' : assignee ? 'assigned' : 'unassigned'}" data-id="${esc(t.id)}" title="${ownerLocked ? 'Owner locked \u2014 a completed task\u2019s owner cannot be changed' : assignee ? 'Assigned to ' + esc(assignee) + ' \u2014 tap to change' : 'Unassigned \u2014 tap to assign'}"><span class="assignee-name">${assignee ? esc(assignee) : 'Unassigned'}</span></div>`
         : "";
+      // Live InProgress timer pill (only for tasks currently in progress).
+      const timerPill = t.status === "InProgress" ? inprogressTimerPill(t) : "";
       card.innerHTML =
         `${assigneeTag}
          <div class="title">${esc(t.title)}</div>
@@ -341,6 +396,7 @@
          ${hasDesc ? `<div class="desc" hidden>${esc(t.description)}</div>` : ""}
          <div class="meta">
            <span class="meta-left">
+             ${timerPill}
              ${repeatChip}
              ${durationBadge(t.duration != null ? t.duration : t.days)}
            </span>
@@ -522,10 +578,16 @@
         } else {
           cls = "days-over"; val = String(dw) + u; cmp = " / est " + est + u;
         }
+        // "Done by" column: a non-interactive bubble matching the card's owner
+        // tag, shown when the task has an owner; a quiet dash when unassigned.
+        const owner = (t.assignee || "").trim();
+        const ownerCell = owner
+          ? `<span class="log-owner" title="Done by ${esc(owner)}"><span class="log-owner-name">${esc(owner)}</span></span>`
+          : `<span class="log-owner unassigned" title="No owner">—</span>`;
         return `
           <tr>
             <td class="c-title">${esc(t.title)}</td>
-            <td class="c-date">${fmtDate(t.created)}</td>
+            <td class="c-owner">${ownerCell}</td>
             <td class="c-date">${fmtDate(t.started)}</td>
             <td class="c-date">${fmtDate(t.completed)}</td>
             <td class="c-num"><span class="days-cell ${cls}">${val}<span class="est">${cmp}</span></span></td>
@@ -537,7 +599,7 @@
            <thead>
              <tr>
                <th>Title</th>
-               <th>Added</th>
+               <th>Done by</th>
                <th>Started</th>
                <th>Completed</th>
                <th>${esc(unitHeader())}</th>
@@ -556,10 +618,24 @@
       if (!t) return;
       const prevStatus = t.status;
       const prevAssignee = t.assignee;
+      // Capture the lifecycle stamps too, so a failed PATCH can roll them back.
+      const prevStarted = t.started;
+      const prevCompleted = t.completed;
       const changingStatus = status !== undefined && status !== null && t.status !== status;
       const changingAssignee = assignee !== undefined && (assignee || null) !== (t.assignee || null);
       if (!changingStatus && !changingAssignee) return; // nothing to do
-      if (changingStatus) t.status = status;              // optimistic
+      // ---- Optimistic update (mirrors the server's lifecycle stamping) ----
+      // Stamp `started`/`completed` exactly the way api.php does, so the card's
+      // in-progress timer starts at ~0 right away. Without this the pill falls
+      // back to the task's `created` time and flashes a huge elapsed value
+      // ("38:22:30.6" for a task moved 11 seconds ago) until the next poll.
+      const nowISO = new Date().toISOString();
+      if (changingStatus) {
+        t.status = status;
+        if (status === "InProgress" && prevStatus !== "InProgress") t.started = nowISO;
+        if (status === "Pending") delete t.started;
+        if (status === "Completed") t.completed = nowISO;
+      }
       if (changingAssignee) t.assignee = assignee || null;
       render();
       try {
@@ -571,10 +647,21 @@
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
-        if (!r.ok) throw new Error("PATCH failed " + r.status);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(data.error || ("PATCH failed " + r.status));
+        // Reconcile the card with the server's authoritative task so the
+        // optimistic stamps match exactly what was written.
+        if (data.task) Object.assign(t, data.task);
+        // A repeating task that just completed spawns a fresh Pending copy; add
+        // it now so the board shows it instead of waiting for the next poll.
+        if (data.spawned && data.spawned.id) tasks.push(data.spawned);
+        render();
       } catch (err) {
-        t.status = prevStatus; // roll back on failure
+        // Roll back EVERYTHING we changed optimistically.
+        t.status = prevStatus;
         t.assignee = prevAssignee;
+        if (prevStarted === undefined) delete t.started; else t.started = prevStarted;
+        if (prevCompleted === undefined) delete t.completed; else t.completed = prevCompleted;
         render();
         alert("Could not update task: " + err.message);
       }
@@ -773,6 +860,10 @@
       await initSwitcher();
       await load();
       startPointsTimer();
+      // One global 100ms ticker keeps every InProgress timer pill live. Guarded
+      // on !STATIC so the read-only static showcase never shows a forward-running
+      // stopwatch off a stale `started` timestamp.
+      if (!STATIC) startTimerTicker();
     }
 
     // ---- Team points -------------------------------------------------------

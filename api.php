@@ -173,6 +173,7 @@ function prune_archived(string $key, array $tasks, array $cfg): ?array {
         $tmp = $file . '.tmp-' . getmypid();
         file_put_contents($tmp, json_encode(['archived' => $archive], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), LOCK_EX);
         rename($tmp, $file);
+        @chmod($file, 0600); // keep board data owner-only (atomic write resets umask to 644)
     }
     return $keep;
 }
@@ -188,6 +189,7 @@ function save_board(string $key, array $config, array $tasks): void {
     $tmp = $file . '.tmp-' . getmypid();      // atomic write
     file_put_contents($tmp, $payload, LOCK_EX);
     rename($tmp, $file);
+    @chmod($file, 0600); // keep board data owner-only (atomic write resets umask to 644)
 }
 
 // ---- Helpers -----------------------------------------------------------------

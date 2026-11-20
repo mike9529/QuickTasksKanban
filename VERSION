@@ -1,8 +1,69 @@
-QuickTasks — Version 1.27
+QuickTasks — Version 1.29
 Date: 2026-11-19
-Status: SHIPPED on dev + staging + GitHub (tag v1.27). v1.26 (clock-anchored
-        repeating) and v1.25 (canStartOnUTC rename) shipped earlier the same day.
+Status: SHIPPED on dev + staging + GitHub (tag v1.29). The v1.26/v1.27 batch
+        (clock-anchored repeating, newest-first completed column) shipped earlier
+        the same day; v1.28/v1.29 follow in this update.
 
+--------------------------------------------------------------------------------
+v1.29 changes (vs v1.28):
+--------------------------------------------------------------------------------
+  FEATURE — live InProgress timer (stopwatch) on the card:
+     - A task sitting in the InProgress column shows a small elapsed-time pill in
+       its meta row, formatted hh:mm:ss.d (hours, minutes, seconds, decisecond).
+       Leading zero-groups are collapsed: 27.5s reads "27.5", 27m15.1s reads
+       "27:15.1", and it rolls up to 1:05:02.3 past an hour.
+     - Origin = the task's `started` stamp (set on the Pending -> InProgress
+       transition); falls back to `created`, then render time, so it's always
+       present on an InProgress card. Pending/Halted/Completed show nothing.
+     - ONE global 100ms ticker refreshes every InProgress pill in place (survives
+       the 15s poll re-render and drags; recomputes from the start each tick so it
+       can't drift). Guarded on !STATIC so the read-only GitHub Pages showcase
+       never runs a stopwatch off a stale `started`.
+     - Aesthetics: the pill matches the card's chip system (rounded 999px, same
+       meta-row footprint) but is tinted to the InProgress accent with a soft
+       "live" pulse and tabular figures so the ticking digits don't jiggle;
+       respects prefers-reduced-motion.
+     - BUG FIX (same revision): moving a task into InProgress briefly flashed a
+       huge elapsed value (e.g. 38:22:30.6 for a task moved ~11s earlier) because
+       the optimistic re-render ran before `started` existed, so the pill fell back
+       to the old `created` time. The optimistic move now mirrors the server's
+       lifecycle stamping (stamps `started` ~now on entry, clears it on a return to
+       Pending, and reconciles from the PATCH response / rolls back on failure), so
+       the pill starts at ~0 the instant a task moves in. Verified headlessly by
+       delaying the PATCH ~1.2s: the value read 0.0 (old bug: 38:22:30.6).
+  LOG — Completed-items grid "Added" column -> "Done by" owner bubble:
+     - The "Added" column (task `created` date) in the completed-items log below
+       the board was removed and replaced with a "Done by" column showing the
+       task's owner, rendered as the SAME rounded bubble as the card's owner tag
+       (a new non-interactive `.log-owner` twin of `.card .assignee`): an owned
+       task shows the name pill (tooltip "Done by <name>"), an unowned task shows a
+       quiet dash (tooltip "No owner"). Started/Completed/Days-worked columns are
+       unchanged, so no date info is lost.
+     - Verified on the live children board (temporary owned + unowned completed
+       tasks, then removed): an owned task rendered the owner bubble and an unowned
+       one rendered a dash, matching the card tag.
+  - `index.html` (timer pill + `fmtTimer` + global ticker in `bootstrap`; log row +
+    "Done by" header), `css/style.css` (`.timer` pill + `timer-pulse`; `.log-owner`).
+  - `api.php` hardening folded in: the atomic write now `chmod 0600` after both
+    `save_board()` and `prune_archived()` rename, keeping board data owner-only
+    (the atomic temp-file otherwise inherits umask 0644). Server-agnostic (works
+    under Apache and php -S). This is a security improvement, included in the ship.
+--------------------------------------------------------------------------------
+v1.28 changes (vs v1.27):
+--------------------------------------------------------------------------------
+  CHORE/CLEANUP — Completed-column window is a per-board config variable:
+     - The Completed column's "recent completions" window is the per-board config
+       value `config.completedWindowDays` (present in each board's JSON, in
+       api.php's default_config(), and both DEFAULT_CONFIG blocks), and the column
+       already read it dynamically for the filter and header. This pass removed the
+       two magic `completedWindowDays || 2` fallbacks in `index.html` so there's a
+       single named default (the DEFAULT_CONFIG value, 2); switching `||` -> `??`
+       also makes an explicit 0 valid ("hide all from the column, keep in the log")
+       instead of silently coercing back to 2. Per-board proven on dev: setting the
+       window independently on two boards (adults=3 / children=1) rendered different
+       column headers at the same time.
+     - This is the config knob behind the column; no new UI control yet (a follow-up
+       if a settings knob is wanted). Verified on dev 8085 at 1/2/3.
 --------------------------------------------------------------------------------
 v1.27 changes (vs v1.26):
 --------------------------------------------------------------------------------
@@ -181,7 +242,7 @@ Process notes
   - 2026-11-18: an earlier staging publish of the owner-lock was done by mistake and
     fully reverted from a backup; staging was restored to v1.1. Going forward,
     changes stay in dev until confirmed, then ALL changes ship together to staging
-    + GitHub only when Michael says so — never auto-published.
+    + GitHub only on explicit approval — never auto-published.
   - 2026-11-19: v1.2 shipped to staging CODE-ONLY (index.html, css/style.css,
     api.php, admin.html, VERSION, README.md). Data was NOT overwritten: the repeat
     feature is additive, so no board migration was needed and the kids' live
