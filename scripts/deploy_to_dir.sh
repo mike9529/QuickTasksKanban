@@ -33,10 +33,9 @@ done
 
 # 2b) Commit the untrack so the working tree is clean — a future
 #     `git pull --ff-only` then never aborts over the removed demo data.
-if git status --porcelain | grep -q '^D\|^ D\|^.D'; then
+if git status --porcelain | grep -qE '^(D | .D|D$)' ; then
   git -c user.name="jessica" -c user.email="jessica@localhost" \
-      commit -q -m "deploy: untrack repo demo data (preserve live data)" \
-      -- boards/children.json boards/adults.json boards.json tasks.json 2>/dev/null || true
+      commit -q -m "deploy: untrack repo demo data (preserve live data)" 2>/dev/null || true
 fi
 
 # 3) Replace demo data with the live data (from DATA_SRC).
