@@ -26,6 +26,17 @@ DATA_FILES="boards/children.json boards/adults.json boards.json tasks.json"
 
 cd "$DEPLOY"
 
+# 0) One-time setup: a bare `git clone` checks out the repo's DEMO data as
+#    tracked. Untrack it so the gitignore protects the live data that replaces
+#    it, and so the deploy dir only ever tracks code (keeps future pulls a
+#    clean fast-forward). Idempotent: no-op once data is untracked.
+if git ls-files | grep -qE '^(boards/.*\.json$|boards\.json$|tasks\.json$)'; then
+  git rm -q --cached -- boards/children.json boards/adults.json boards.json tasks.json 2>/dev/null || true
+  git -c user.name="jessica" -c user.email="jessica@localhost" \
+      commit -q -m "deploy: untrack repo demo data (preserve live data)" 2>/dev/null || true
+  echo "   one-time: untracked demo data so live data is protected"
+fi
+
 # 1) Pull latest code (fast-forward only; data is gitignored so it's untouched).
 echo ">> pulling latest code into $DEPLOY ..."
 git pull --ff-only
