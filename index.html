@@ -35,10 +35,18 @@
         </div>
       </div>
       <div class="points-middle" id="points-miles" aria-label="Milestone badges">
-        <div class="mile" data-m="25"><span class="ico">✓</span>25%</div>
-        <div class="mile" data-m="50"><span class="ico">✓</span>50%</div>
-        <div class="mile" data-m="75"><span class="ico">✓</span>75%</div>
-        <div class="mile mile-final" data-m="100"><span class="ico">👑</span>100%</div>
+        <div class="points-miles-row">
+          <div class="mile" data-m="25"><span class="ico">✓</span>25%</div>
+          <div class="mile" data-m="50"><span class="ico">✓</span>50%</div>
+          <div class="mile" data-m="75"><span class="ico">✓</span>75%</div>
+          <div class="mile mile-final" data-m="100"><span class="ico">👑</span>100%</div>
+          <!-- Bonus button: after 100%, lights up once the goal is met -->
+          <span id="points-bonus-badge" class="points-bonus-badge" aria-label="Bonus points" hidden><span class="bonus-ico" aria-hidden="true">🎁</span><span class="bonus-val"></span></span>
+        </div>
+        <!-- Bonus prize previews: dimmed chips under the badges, above the meter. -->
+        <div class="points-bonus" id="points-bonus" aria-label="Bonus prizes after goal" hidden>
+          <div class="points-bonus-row" id="points-bonus-row"></div>
+        </div>
       </div>
       <div class="points-right">
         <div class="points-remaining" id="points-remaining"></div>
@@ -982,6 +990,104 @@
         leftMs > 0 ? ("\u23F3 " + fmtCd(leftMs)) : "Week complete";
       document.getElementById("points-ends").textContent =
         "Resets Monday " + end.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+      // ---- Bonus prizes (post-goal) ---------------------------------------
+      // After the team clears the 100% goal, every whole point of OVERAGE
+      // (excess = points − goal, floored) reveals the next prize in order.
+      // Prizes are predefined in config.bonusPrizes (a string, or array of
+      // strings/objects). No prizes configured -> the whole section is hidden.
+      renderBonusPrizes(pts, goalR);
+    }
+
+    // Build the dimmed-then-lit prize chips once, then toggle their "lit"
+    // state in place as excess crosses each whole point. Cheap: only the
+    // class list changes on the 1s timer.
+    let bonusEl = null, bonusBuiltFor = "";
+    // Each prize may be a string (text only) or {text, threshold}. A prize
+    // unlocks when team points >= its threshold. threshold defaults to
+    // goal + (index+1) when not specified, so a plain string list still
+    // works; objects let each prize set its own progressive bar.
+    function normPrizes(raw, goalR) {
+      const out = [];
+      const push = (p, i) => {
+        if (typeof p === "string") out.push({ text: p, threshold: null });
+        else if (p && typeof p === "object") {
+          out.push({ text: p.text || "", threshold: (p.threshold != null ? Number(p.threshold) : null) });
+        }
+      };
+      if (typeof raw === "string") push(raw, 0);
+      else if (Array.isArray(raw)) raw.forEach((p, i) => push(p, i));
+      else if (raw && raw.text) push(raw, 0);
+      // Fill any missing thresholds with goal + (i+1).
+      out.forEach((p, i) => {
+        if (p.threshold == null || isNaN(p.threshold)) p.threshold = goalR + (i + 1);
+      });
+      return out;
+    }
+    function renderBonusPrizes(pts, goalR) {
+      const host = document.getElementById("points-bonus");
+      if (!host) return;
+      const prizes = normPrizes(config.bonusPrizes, goalR);
+      const excess = pts - goalR;               // points past the goal
+      if (!prizes.length || excess <= 0) {
+        host.hidden = true;
+        return;
+      }
+      host.hidden = false;
+      // Bonus badge: a very appealing "Bonus - .NN" for the current overage.
+      // Shown in the banner's status slot once the goal is met so it reads as
+      // the team's headline reward number.
+      const bonusBadge = document.getElementById("points-bonus-badge");
+      if (bonusBadge) {
+        bonusBadge.hidden = false;
+        bonusBadge.querySelector(".bonus-val").textContent =
+          "Bonus - " + excess.toFixed(2);
+        bonusBadge.title = "Bonus points past the goal: " + excess.toFixed(2);
+      }
+      // Build (or rebuild if the prize list changed) the chip row.
+      const row = host.querySelector("#points-bonus-row");
+      const key = prizes.map((p) => p.text + "@" + p.threshold).join("\u241f");
+      if (!row || bonusBuiltFor !== key) {
+        bonusBuiltFor = key;
+        row.innerHTML = "";
+        prizes.forEach((p, i) => {
+          const chip = document.createElement("div");
+          chip.className = "bonus-chip locked";
+          chip.dataset.idx = String(i);
+          chip.innerHTML =
+            '<span class="bonus-num">' + (i + 1) + '</span>' +
+            '<span class="bonus-ico" aria-hidden="true">🎁</span>' +
+            '<span class="bonus-lock" aria-hidden="true">🔒</span>' +
+            '<span class="bonus-text"></span>' +
+            '<span class="bonus-need"></span>';
+          chip.querySelector(".bonus-text").textContent = p.text;
+          row.appendChild(chip);
+        });
+      }
+      // Reveal per prize threshold: prize i lights when pts >= threshold[i].
+      // Progressively harder: 1st +10%, 2nd +20% (+rand), 3rd +30% (+rand).
+      // "Points to go" is shown on the NEXT pending prize only (its own
+      // chip), not on every locked one.
+      row.querySelectorAll(".bonus-chip").forEach((chip) => {
+        const idx = Number(chip.dataset.idx);
+        const on = pts >= prizes[idx].threshold - 1e-9;
+        chip.classList.toggle("lit", on);
+        chip.classList.toggle("locked", !on);
+        const need = chip.querySelector(".bonus-need");
+        if (on) {
+          chip.title = "Earned: " + prizes[idx].text;
+          if (need) need.textContent = "";
+        } else {
+          const toGo = prizes[idx].threshold - pts;
+          chip.title = "Bank " + toGo.toFixed(2) + " more point" +
+            (toGo > 1.0001 ? "s" : "") + " to unlock " + prizes[idx].text;
+          if (need) {
+            // Show the remaining points on the next pending prize only.
+            const isNext = idx === prizes.findIndex((p) => pts < p.threshold - 1e-9);
+            need.textContent = isNext ? (toGo.toFixed(2) + " to go") : "";
+          }
+        }
+      });
     }
 
     function startPointsTimer() {

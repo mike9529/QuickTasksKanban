@@ -92,7 +92,9 @@ quicktasks/
 ├── boards/
 │   ├── adults.json     # Adults board: { config, tasks }
 │   └── children.json   # Children board: { config, tasks }
-└── tasks.json          # LEGACY single-board store (unused by the current UI)
+├── tasks.json          # LEGACY single-board store (unused by the current UI)
+└── docs/
+    └── screenshots/      # Release screenshots (Team Points bonus states)
 ```
 
 - `index.html` / `admin.html` — the two pages. The board view is what people use
@@ -106,7 +108,8 @@ quicktasks/
 - `boards/*.json` — the **source of truth for each board**: a `config` block plus
   a `tasks` array. This is where the data lives.
 - `boards.json` — the **registry** (see below).
-- `tasks.json` — the original single-board store, kept for reference. The current
+- `tasks.json` — the original single-board store, kept for reference.
+- `docs/screenshots/` — release screenshots (the Team Points bonus-prize states).
   UI and `api.php` **no longer read or write it** — data now lives under
   `boards/`. Safe to delete later; left in place so nothing breaks if something
   old still points at it.
@@ -334,6 +337,30 @@ here so it's not lost:
 ---
 
 ## Revisions
+
+### v1.32 — 2026-11-21 (RELEASED on GitHub, tag v1.32)
+- **Post-goal bonus prizes on the Team Points banner.** After the team clears the
+  100% weekly point goal, each whole point of overage reveals the next prize in
+  order, shown as compact chips **under the milestone badges and above the
+  progress meter** (inside `.points-middle`, not a new row) — so the team-points
+  section **never grows in height**. A gold, gently-pulsing **"Bonus - .NN"**
+  badge shows the live overage as the headline reward number.
+- **Progressive thresholds.** Prizes are per-board `config.bonusPrizes` (array of
+  strings or `{text, threshold}` objects, or a single value). Each prize lights
+  when `points >= threshold[i]`; the Children sample is goal +10% / +20% / +30%
+  (11.0 / 12.0 / 13.0). No prizes configured → the whole section is hidden.
+- **Compact locked chips.** A not-yet-earned prize shows just `[gift] [lock]`
+  (the name is hidden so the chip stays small); only the **next pending** prize
+  shows its "N.NN to go" count, to the right of the lock. When earned the chip
+  pops gold and the name reveals.
+- **Screenshots** in `docs/screenshots/`: `TeamPoints_stateA_allDimmed.png`
+  (goal met, all locked) and `TeamPoints_stateB_oneLit.png` (first prize earned).
+- **Files:** `index.html` (bonus HTML into `.points-middle` + per-threshold reveal
+  loop), `css/style.css` (`.points-middle` stack, `.points-bonus-badge`,
+  `.bonus-chip` locked/lit, `.bonus-need`), `boards/children.json` (the
+  `bonusPrizes` sample — prod data otherwise untouched). No `api.php` /
+  `admin.html` change; the fresh-load guard still PASSes.
+
 
 ### v1.27 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.27)
 - **Completed column: most-recently-completed on top.** A task that's just been

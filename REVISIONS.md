@@ -3,6 +3,51 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.32 — 2026-11-21 (RELEASED on GitHub, tag v1.32)
+New feature: **post-goal bonus prizes** on the Team Points banner. Code-only;
+the prod boards data is untouched (prod-only, not carried in the repo).
+
+### Feature — post-goal "bonus prizes"
+- After the team clears the **100% weekly point goal**, each whole point of
+  **overage** (points past the goal) reveals the next prize in order. A gold,
+  gently-pulsing **"Bonus - .NN"** badge shows the live overage as the headline
+  reward number (e.g. `Bonus - 1.15`).
+- Prizes render as **compact chips under the milestone badges and above the
+  progress meter**, inside `.points-middle` (not a new row) — so the
+  team-points section **never grows in height**.
+- **Progressive thresholds** (per prize, configured): #1 = goal +10%, #2 = goal
+  +20%, #3 = goal +30% (each a `{text, threshold}` object). The threshold is the
+  total team-points value at which that prize lights. (A random 0..1 extra can
+  be layered per week; this release ships fixed +10/20/30% for testability and
+  reproducible data.)
+- **Locked (not-yet-earned)** prizes show a small dimmed slot: gift icon + a lock
+  glyph. The prize **name is hidden** (`display:none`) so the chip stays compact —
+  it reads just `[gift] [lock] [N.NN to go]`. Only the **next pending** prize
+  shows its "N.NN to go" count (right of the lock); the others show just the lock.
+  When earned, the chip **pops gold** and the name reveals.
+- **Config:** per-board `config.bonusPrizes` — an array of strings or
+  `{text, threshold}` objects (or a single value). No prizes configured → the
+  whole section is hidden. Children sample:
+  `[{text:"wday - Nitro",threshold:11.0},{text:"wday - Flanigans",threshold:12.0},{text:"wday - JapanInn",threshold:13.0}]`.
+- Reveal is **per-prize threshold** based (prize *i* lights when
+  `points >= threshold[i]`), so the progressive +10/20/30% bars are honored
+  exactly. The whole section auto-hides when a board has no goal or no prizes, and
+  resets with the week's points.
+- **Screenshots** in `docs/screenshots/`: `TeamPoints_stateA_allDimmed.png`
+  (goal met, all locked) and `TeamPoints_stateB_oneLit.png` (first prize earned).
+
+### Files
+- `index.html` — bonus HTML into `.points-middle` (badges row → bonus button →
+  prize row, above the meter); chip build + per-threshold reveal loop; "to go" on
+  the next-pending prize only.
+- `css/style.css` — `.points-middle` column stack; `.points-miles-row`;
+  `.points-bonus-badge` (gold pulse); `.bonus-chip` (compact pill, locked = hidden
+  name + lock, lit = gold pop); `.bonus-need` (next-pending count).
+- `boards/children.json` — the `config.bonusPrizes` sample (prod data otherwise
+  untouched).
+- `docs/screenshots/` — the two Team Points state images.
+- No `api.php` / `admin.html` change; the fresh-load guard still **PASS**es.
+
 ## v1.29 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.29)
 Two features plus one bug fix, all in the InProgress/Completed area of the board.
 

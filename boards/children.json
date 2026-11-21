@@ -26,7 +26,21 @@
             "Mommy"
         ],
         "pointGoal": 10,
-        "logPruneDays": 30
+        "logPruneDays": 30,
+        "bonusPrizes": [
+            {
+                "text": "wday - Nitro",
+                "threshold": 11.0
+            },
+            {
+                "text": "wday - Flanigans",
+                "threshold": 12.0
+            },
+            {
+                "text": "wday - JapanInn",
+                "threshold": 13.0
+            }
+        ]
     },
     "tasks": [
         {
