@@ -4,41 +4,51 @@
 #
 # Model (works with OR without a GitHub remote — the local repo is source of
 # truth; GitHub is just an optional mirror):
-#   1. `git pull --ff-only` in the deploy dir to get the latest code.
+#   1. `git pull --ff-only` to get the latest code.
 #   2. The repo's committed boards/*.json / boards.json / tasks.json are DEMO
-#      data. They are NOT deployed: they're removed and replaced with the live
-#      data that already exists in the deploy dir (or a data source), which is
-#      gitignored so the next `git pull` can't clobber it.
+#      data. They are UNTRACKED in the deploy dir (git rm --cached) and replaced
+#      with the live data, so a future `git pull` can never clobber them.
 #
 # Usage:  scripts/deploy_to_dir.sh <deploy_dir> [data_source_dir]
-#   data_source_dir: where to take live data from (default: <deploy_dir> itself,
-#   i.e. the data already on disk in the deploy dir is kept).
+#   data_source_dir: where to take live data from (default: the data already on
+#   disk in the deploy dir is kept).
 set -euo pipefail
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEPLOY="${1:?usage: deploy_to_dir.sh <deploy_dir> [data_source_dir]}"
 DATA_SRC="${2:-$DEPLOY}"
 
 cd "$DEPLOY"
 
-# 1) Pull latest code (fast-forward only; data files are gitignored so untouched).
+# 1) Pull latest code (fast-forward only).
 echo ">> pulling latest code into $DEPLOY ..."
 git pull --ff-only
 
-# 2) Replace the repo's demo data with the live data (from DATA_SRC).
-#    These paths are gitignored in the deploy dir, so a future `git pull` will
-#    never overwrite them.
+# 2) Stop tracking the repo's DEMO data so the gitignore can protect the live
+#    data that replaces it.
 for f in boards/children.json boards/adults.json boards.json tasks.json; do
-  if [ -f "$DATA_SRC/$f" ]; then
-    mkdir -p "$(dirname "$f")"
-    cp -p "$DATA_SRC/$f" "$f"
-    echo "   live data  <-  $f"
+  if git ls-files --error-unmatch "$f" >/dev/null 2>&1; then
+    git rm -q --cached -- "$f" 2>/dev/null || true
+    echo "   untracked demo data: $f"
   fi
 done
 
-# 3) Confirm the live data is gitignored (so it survives the next pull).
-echo ">> verifying live data is git-ignored (protected from future pulls) ..."
+# 3) Replace demo data with the live data (from DATA_SRC).
+for f in boards/children.json boards/adults.json boards.json tasks.json; do
+  if [ -f "$DATA_SRC/$f" ]; then
+    mkdir -p "$(dirname "$f")"
+    if [ ! -f "$f" ] || ! cmp -s "$DATA_SRC/$f" "$f"; then
+      cp -p "$DATA_SRC/$f" "$f"
+      echo "   live data  <-  $f"
+    else
+      echo "   live data  =  $f (unchanged)"
+    fi
+  fi
+done
+
+# 4) Verify the live data is git-ignored (protected from the next pull).
+echo ">> verifying live data is git-ignored ..."
 for f in boards/children.json boards/adults.json; do
-  if git check-ignore -q "$f"; then echo "   protected: $f"; else echo "   WARN not ignored: $f"; fi
+  if [ -f "$f" ] && git check-ignore -q "$f"; then echo "   protected: $f"
+  else echo "   WARN not ignored: $f"; fi
 done
 
 echo ">> deploy complete: $DEPLOY @ $(git log --oneline -1)"
