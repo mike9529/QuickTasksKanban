@@ -992,15 +992,18 @@
         "Resets Monday " + end.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
       // ---- Bonus prizes (post-goal) ---------------------------------------
-      // After the team clears the 100% goal, every whole point of OVERAGE
-      // (excess = points − goal, floored) reveals the next prize in order.
-      // Prizes are predefined in config.bonusPrizes (a string, or array of
-      // strings/objects). No prizes configured -> the whole section is hidden.
+      // After the team clears the 100% goal, the prize chips reveal as the
+      // team's points cross each threshold. Thresholds are deterministic:
+      // prize i unlocks at goal * (1 + 0.10*(i+1)) -> 110% / 120% / 130% of the
+      // weekly goal. No random draw (Michael 2026-11-21: a lottery can take a
+      // prize the kids already earned, which causes far more trouble than a
+      // clean number ever did).
+      // No prizes configured -> the whole section is hidden.
       renderBonusPrizes(pts, goalR);
     }
 
     // Build the dimmed-then-lit prize chips once, then toggle their "lit"
-    // state in place as excess crosses each whole point. Cheap: only the
+    // state in place as points cross each threshold. Cheap: only the
     // class list changes on the 1s timer.
     let bonusEl = null, bonusBuiltFor = "";
 
@@ -1042,9 +1045,10 @@
       if (typeof raw === "string") push(raw, 0);
       else if (Array.isArray(raw)) raw.forEach((p, i) => push(p, i));
       else if (raw && raw.text) push(raw, 0);
-      // Fill any missing thresholds with goal + (i+1).
       out.forEach((p, i) => {
-        if (p.threshold == null || isNaN(p.threshold)) p.threshold = goalR + (i + 1);
+        if (p.threshold == null || isNaN(p.threshold)) {
+          p.threshold = bonusSpecThreshold(goalR, i);   // +10% / +30% / +60%
+        }
       });
       return out;
     }
@@ -1088,8 +1092,8 @@
           row.appendChild(chip);
         });
       }
-      // Reveal per prize threshold: prize i lights when pts >= threshold[i].
-      // Progressively harder: 1st +10%, 2nd +20% (+rand), 3rd +30% (+rand).
+      // Reveal per prize threshold: prize i lights when pts >= threshold[i]
+      // (goal +10% / +30% / +60%, unless the board hand-sets one).
       // "Points to go" is shown on the NEXT pending prize only (its own
       // chip), not on every locked one.
       row.querySelectorAll(".bonus-chip").forEach((chip) => {
