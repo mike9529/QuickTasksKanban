@@ -1,3 +1,28 @@
+QuickTasks — Version 1.33
+Date: 2026-11-21
+Status: SHIPPED to GitHub (tag v1.33). One-line bug fix to the v1.32 bonus
+        feature: the milestone + bonus badge row was wrapping to a second line
+        at narrow viewports, which affected the banner's width. Forced nowrap.
+        Code-only; no data change.
+
+--------------------------------------------------------------------------------
+v1.33 changes (vs v1.32):
+--------------------------------------------------------------------------------
+  BUG FIX — bonus badge row no longer wraps:
+     - At narrow user-agent widths the .points-miles-row (25% / 50% / 75% / 100%
+       + the "Bonus - .NN" badge) wrapped onto a second line, which changed the
+       banner's height/width. Forced flex-wrap: nowrap on .points-miles-row so
+       the badges + bonus badge always stay on one line.
+     - Tightened the badge sizing so the row fits without overflowing at narrow
+       widths: .mile padding 8px -> 6px (height 20px -> 19px), .points-miles-row
+       gap 6px -> 5px, .points-bonus-badge padding 10px -> 8px / font 13px -> 12px
+       / margin-left 4px -> 2px. Added .points-miles-row .mile / .points-bonus-badge
+       { flex: 0 0 auto; } so nothing shrinks or wraps.
+     - Re-screenshotted both states (single-line): docs/screenshots/
+       TeamPoints_stateA_allDimmed.png + TeamPoints_stateB_oneLit.png.
+
+  FILES: css/style.css only. No data change; fresh-load guard still PASSes.
+
 QuickTasks — Version 1.32
 Date: 2026-11-21
 Status: SHIPPED to GitHub (tag v1.32). New feature: post-goal BONUS PRIZES on the

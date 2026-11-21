@@ -3,6 +3,22 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.33 — 2026-11-21 (RELEASED on GitHub, tag v1.33)
+One-line bug fix to the v1.32 bonus feature.
+
+### Fix — bonus badge row no longer wraps
+- At narrow user-agent widths the `.points-miles-row` (25% / 50% / 75% / 100% +
+  the "Bonus - .NN" badge) wrapped onto a second line, which changed the banner's
+  height/width. **Forced `flex-wrap: nowrap`** on `.points-miles-row` so the
+  badges + bonus badge always stay on one line.
+- Tightened the badge sizing so the row fits without overflowing at narrow widths:
+  `.mile` padding `8px → 6px` (height `20px → 19px`), `.points-miles-row` gap
+  `6px → 5px`, `.points-bonus-badge` padding `10px → 8px` / font `13px → 12px` /
+  margin-left `4px → 2px`, plus `.points-miles-row .mile, .points-bonus-badge {
+  flex: 0 0 auto; }` so nothing shrinks or wraps.
+- Re-screenshotted both states (single-line) in `docs/screenshots/`.
+- `css/style.css` only — no data change; fresh-load guard still PASSes.
+
 ## v1.32 — 2026-11-21 (RELEASED on GitHub, tag v1.32)
 New feature: **post-goal bonus prizes** on the Team Points banner. Code-only;
 the prod boards data is untouched (prod-only, not carried in the repo).

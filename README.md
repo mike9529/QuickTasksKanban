@@ -337,6 +337,15 @@ here so it's not lost:
 ---
 
 ## Revisions
+## Revisions
+
+### v1.33 — 2026-11-21 (RELEASED on GitHub, tag v1.33)
+- **Bug fix — bonus badge row no longer wraps.** At narrow user-agent widths the
+  milestone + "Bonus - .NN" badge row wrapped to a second line, changing the
+  banner's width. Forced `flex-wrap: nowrap` on `.points-miles-row` (plus tighter
+  badge sizing) so the badges + bonus badge always stay on one line. `css/style.css`
+  only; no data change; fresh-load guard still PASSes.
+
 
 ### v1.32 — 2026-11-21 (RELEASED on GitHub, tag v1.32)
 - **Post-goal bonus prizes on the Team Points banner.** After the team clears the
