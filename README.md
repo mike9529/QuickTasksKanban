@@ -19,7 +19,7 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.29** |
+| **Version** | **1.34** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
@@ -338,6 +338,19 @@ here so it's not lost:
 
 ## Revisions
 ## Revisions
+
+### v1.34 — 2026-11-21 (RELEASED on GitHub, tag v1.34)
+- **Bug fix — bonus awards escalate instead of increasing linearly.** The v1.32
+  default in `normPrizes()` was `threshold = goal + (i + 1)` — one whole extra point
+  per prize, a strictly **linear** ladder (11 / 12 / 13 over a goal of 10), so every
+  award cost the same and the difficulty never climbed. Replaced with an escalating
+  ladder `BONUS_LADDER = [0.10, 0.30, 0.60]`: prize *i* lights at `goal * (1 + pct)`,
+  i.e. each award costs 10% / 30% / 60% … of the weekly goal in extra points past the
+  goal (11.00 / 13.00 / 16.00 over a goal of 10; marginal price 1 → 2 → 3 points).
+  "Points to go" stays measured against points already banked; an explicit config
+  `threshold` still wins; the prototyped random weekly "bonus roll" is not shipped
+  (a lottery can revoke an unlocked prize). `index.html` only; no data change;
+  fresh-load guard still PASSes.
 
 ### v1.33 — 2026-11-21 (RELEASED on GitHub, tag v1.33)
 - **Bug fix — bonus badge row no longer wraps.** At narrow user-agent widths the

@@ -1,3 +1,38 @@
+QuickTasks — Version 1.34
+Date: 2026-11-21
+Status: SHIPPED to GitHub (tag v1.34). Bug fix to the v1.32/v1.33 bonus feature:
+        the post-goal prize ladder was LINEAR, so every award cost the same and
+        the difficulty never escalated. Code-only; no data change.
+
+--------------------------------------------------------------------------------
+v1.34 changes (vs v1.33):
+--------------------------------------------------------------------------------
+  BUG FIX - bonus awards now escalate instead of increasing linearly:
+     - The v1.32 default in normPrizes() was threshold = goal + (i + 1): one
+       whole extra point per prize, i.e. a strictly LINEAR ladder. Over a goal
+       of 10 that put the awards at 11 / 12 / 13, so each prize cost exactly
+       the same as the last and the run of prizes was trivially cheap.
+     - Replaced with an ESCALATING ladder (BONUS_LADDER = [0.10, 0.30, 0.60]):
+       prize i requires goal * (1 + pct) total team points, so each award costs
+       10% / 30% / 60% ... of the weekly goal in EXTRA points past the goal.
+       The marginal price climbs 1 -> 2 -> 3 points, so the awards get
+       progressively harder to earn instead of staying flat.
+     - Over a goal of 10: prize 1 = 11.00 (+10%), prize 2 = 13.00 (+30%),
+       prize 3 = 16.00 (+60%). "Points to go" stays measured against the points
+       already banked (e.g. at 11.08 pts prize 2 reads "1.92 to go", prize 3
+       "4.92 to go"), which is the behaviour Michael confirmed he wants.
+     - An explicit threshold in config.bonusPrizes still wins; the ladder only
+       fills in thresholds that are missing, so boards that hand-set values are
+       unaffected. A random per-week "bonus roll" that was prototyped is
+       deliberately NOT shipped: a lottery can revoke a prize the kids already
+       unlocked, which is unacceptable. No Math.random in the bonus path.
+     - Comparison uses the unrounded points value, so thresholds cannot drift
+       as the week progresses.
+
+  FILES: index.html only (BONUS_LADDER + bonusSpecThreshold(), and the
+  threshold default inside normPrizes()). No api.php / admin.html / css change.
+  Production boards/*.json are production-only and are not carried in this repo.
+
 QuickTasks — Version 1.33
 Date: 2026-11-21
 Status: SHIPPED to GitHub (tag v1.33). One-line bug fix to the v1.32 bonus

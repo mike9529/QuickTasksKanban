@@ -3,6 +3,34 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.34 — 2026-11-21 (RELEASED on GitHub, tag v1.34)
+Bug fix to the v1.32/v1.33 bonus feature: the post-goal prize ladder was
+**linear**, so every award cost the same and the difficulty never escalated.
+
+### Fix — bonus awards escalate instead of increasing linearly
+- The v1.32 default in `normPrizes()` was `threshold = goal + (i + 1)`: one whole
+  extra point per prize, i.e. a strictly **linear** ladder. Over a goal of 10 that
+  put the awards at 11 / 12 / 13, so each prize cost exactly the same as the last
+  and the post-goal run was trivially cheap.
+- Replaced with an **escalating ladder** (`BONUS_LADDER = [0.10, 0.30, 0.60]`):
+  prize *i* requires `goal * (1 + pct)` total team points, so each award costs
+  10% / 30% / 60% … of the weekly goal in **extra** points past the goal. The
+  marginal price climbs 1 → 2 → 3 points, so the awards get progressively harder
+  to earn instead of staying flat.
+- Over a goal of 10: prize 1 = **11.00** (+10%), prize 2 = **13.00** (+30%),
+  prize 3 = **16.00** (+60%). "Points to go" stays measured against the points
+  **already banked** (e.g. at 11.08 pts prize 2 reads "1.92 to go", prize 3
+  "4.92 to go") — the behaviour Michael confirmed he wants.
+- An explicit `threshold` in `config.bonusPrizes` still wins; the ladder only
+  fills in missing thresholds, so boards that hand-set values are unaffected.
+- A random per-week "bonus roll" that was prototyped is deliberately **not**
+  shipped: a lottery can revoke a prize the kids already unlocked. No
+  `Math.random` in the bonus path. Comparison uses the **unrounded** points value
+  so thresholds cannot drift as the week progresses.
+- **Files:** `index.html` only (`BONUS_LADDER` + `bonusSpecThreshold()`, and the
+  threshold default inside `normPrizes()`). No `api.php` / `admin.html` / CSS
+  change. Production `boards/*.json` stay production-only, not carried in repo.
+
 ## v1.33 — 2026-11-21 (RELEASED on GitHub, tag v1.33)
 One-line bug fix to the v1.32 bonus feature.
 

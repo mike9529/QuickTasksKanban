@@ -1003,10 +1003,34 @@
     // state in place as excess crosses each whole point. Cheap: only the
     // class list changes on the 1s timer.
     let bonusEl = null, bonusBuiltFor = "";
-    // Each prize may be a string (text only) or {text, threshold}. A prize
-    // unlocks when team points >= its threshold. threshold defaults to
-    // goal + (index+1) when not specified, so a plain string list still
-    // works; objects let each prize set its own progressive bar.
+
+    // ---- Bonus thresholds (escalating ladder, no lottery) -----------------
+    // BUG FIX (2026-11-21): the old normPrizes() defaulted missing thresholds
+    // to goal + (i+1) - whole numbers - so prize 2 sat at a suspiciously clean
+    // "0.92 to go". An earlier patch drew a random bonus roll per week, but a
+    // lottery can revoke a prize the kids already unlocked, so it is removed.
+    // The rule is now Michael's escalation ladder: each prize costs 10% / 30%
+    // / 60% ... of the weekly goal in EXTRA points past the goal, so the price
+    // of each prize climbs steeply and the numbers never land on a suspicious
+    // round figure. Over a goal of 10:
+    //   prize 1 = goal +10% = 11.00  (1 extra point)
+    //   prize 2 = goal +30% = 13.00  (2 more points after prize 1)
+    //   prize 3 = goal +60% = 16.00  (3 more points after prize 2)
+    // "Points to go" is always measured from what is already banked, so at
+    // 11.08 pts prize 2 reads "1.92 to go" and prize 3 "4.92 to go" - which is
+    // the "it's counting the points they already earned" behaviour Michael
+    // confirmed he wants. Comparison uses the unrounded value so nothing
+    // drifts as the week progresses.
+    const BONUS_LADDER = [0.10, 0.30, 0.60];        // +10%, +30%, +60% of goal
+    function bonusSpecThreshold(goal, i) {
+      const pct = BONUS_LADDER[i] != null ? BONUS_LADDER[i]
+                                          : BONUS_LADDER[BONUS_LADDER.length - 1] * (i + 1);
+      return goal * (1 + pct);                      // 110% / 130% / 160%, ...
+    }
+
+    // Normalize the raw config.bonusPrizes into [{text, threshold}].
+    // Priority: an explicit per-prize threshold in the config (honored for
+    // boards that hand-set one) > the ladder value goal * (1 + BONUS_LADDER[i]).
     function normPrizes(raw, goalR) {
       const out = [];
       const push = (p, i) => {
