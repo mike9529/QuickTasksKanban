@@ -19,7 +19,7 @@ on the PHP built-in server *or* Apache + mod_php.
 
 | | |
 |---|---|
-| **Version** | **1.30** |
+| **Version** | **1.29** |
 | **State** | Stable, in production |
 | **Runs** | Kids' household use — this snapshot is the live **staging** board |
 | **Multi-board** | Yes — `Adults` + `Children`, each its own JSON file |
@@ -27,11 +27,7 @@ on the PHP built-in server *or* Apache + mod_php.
 | **Repeating tasks** | Yes — a task can recur on its own, sit hidden until a future start time, or lock to a fixed clock time (v1.26) |
 
 Versioning convention: a version number is assigned **when a feature set is
-completed and shipped**. `1.30` (this release) syncs the repo's committed board
-data to the current live schema (the `repeat` + `canStartOnUTC` fields), removes
-the dead legacy `tasks.json`, and adds a **fresh-load guard**
-(`scripts/fresh_load_check.php` + GitHub Actions) so a fresh pull can never break
-on first load; `1.29` adds a live InProgress timer pill
+completed and shipped**. `1.29` (this release) adds a live InProgress timer pill
 (`hh:mm:ss.d`, decisecond refresh) and swaps the completed-items log's "Added"
 column for a "Done by" owner bubble, and includes a `chmod 0600` hardening on the
 board writes; `1.28` tidied the Completed-column window into a single per-board
@@ -96,8 +92,7 @@ quicktasks/
 ├── boards/
 │   ├── adults.json     # Adults board: { config, tasks }
 │   └── children.json   # Children board: { config, tasks }
-└── scripts/
-    └── fresh_load_check.php  # "fresh pull must load on first boot" guard
+└── tasks.json          # LEGACY single-board store (unused by the current UI)
 ```
 
 - `index.html` / `admin.html` — the two pages. The board view is what people use
@@ -111,13 +106,10 @@ quicktasks/
 - `boards/*.json` — the **source of truth for each board**: a `config` block plus
   a `tasks` array. This is where the data lives.
 - `boards.json` — the **registry** (see below).
-- `scripts/fresh_load_check.php` — a read-only **guard** that mirrors the cold
-  start: valid JSON, a sane registry, each config complete over `DEFAULT_CONFIG`,
-  no task carrying the renamed `startUntil`, every `repeat` sane, and `api.php`
-  passing `php -l`. It runs locally and on every push/PR to `main`
-  (`.github/workflows/fresh-load.yml`), so a bad schema or data commit fails the
-  build instead of shipping a broken fresh pull. Run it yourself with
-  `php scripts/fresh_load_check.php .`.
+- `tasks.json` — the original single-board store, kept for reference. The current
+  UI and `api.php` **no longer read or write it** — data now lives under
+  `boards/`. Safe to delete later; left in place so nothing breaks if something
+  old still points at it.
 
 ---
 
@@ -291,15 +283,15 @@ and restart Apache. No rewrite rules needed — `index.html`, `admin.html`,
 
 ## Data & backup
 
-- **The data is the JSON files.** Back up `boards.json` and `boards/` and you have
-  everything. `boards/<key>.archive.json` files are created automatically as old
-  completions are pruned — back those up too if you keep them.
-- **This repo's code and its board JSON are now version 1.30, in sync.** As of
-  `1.30` the committed `boards/*.json` carry the current schema (`repeat` +
-  `canStartOnUTC`); the live staging board's JSON remains the **separate working
-  copy** and is **not** kept in sync automatically — sync the data (and publish a
-  version) only when you intend to snapshot it. A stale schema can no longer sneak
-  in: the `fresh_load_check.php` guard runs on every push/PR.
+- **The data is the JSON files.** Back up `boards.json`, `boards/`, and
+  `tasks.json` and you have everything. `boards/<key>.archive.json` files are
+  created automatically as old completions are pruned — back those up too if you
+  keep them.
+- **This repo's code is version 1.29; the board JSON is a point-in-time
+  snapshot as of version 1.27.** The live staging board's JSON (the kids' current
+  tasks) is a **separate working copy** and is **not** kept in sync with the repo
+  automatically — commit/publish a new version only when you intend to snapshot the
+  data.
 - To add a brand-new board: add it to `boards.json` and drop in
   `boards/<key>.json` (or just let the API create it empty on first write).
 
@@ -337,31 +329,11 @@ here so it's not lost:
   being tested with the kids, so the boards stay fully writable until that is
   otherwise.
 - **iCloud sync of the board JSON** — parked; revisit when the app stabilizes.
-- Nothing else in progress — **1.30 is the current release.**
+- Nothing else in progress — **1.29 is the current release.**
 
 ---
 
 ## Revisions
-
-### v1.30 — 2026-11-20 (RELEASED on GitHub, tag v1.30)
-- **Data sync — committed data now matches the live schema.** `boards/adults.json`
-  and `boards/children.json` were refreshed from the frozen v1.1 demo snapshot to
-  the current dev data, which carries the `canStartOnUTC` + `repeat` fields
-  (the recurring-task schema from v1.2 / v1.25 / v1.26). Pure data refresh — no
-  code change, no config change, so the app behaves exactly as `1.29`.
-- **Removed the dead `tasks.json`.** Nothing in `api.php` / `index.html` /
-  `admin.html` ever reads it (the live API loads `boards/<key>.json`; the static
-  GitHub Pages fallback loads `boards.json` + `boards/<key>.json`). It was a
-  leftover and could only confuse.
-- **Fresh-load guard.** New `scripts/fresh_load_check.php` +
-  `.github/workflows/fresh-load.yml`. The check mirrors a cold start: every data
-  file valid JSON, the registry exposes its boards, each config merges over
-  `DEFAULT_CONFIG` with all required keys, no task carries the renamed
-  `startUntil`, every `repeat` is a sane `{every,unit[,at]}` (or null), and
-  `api.php` passes `php -l`. It runs on **every push/PR to `main`**, so a bad
-  schema or data commit fails the build instead of shipping a fresh pull that
-  breaks on first load. Verified: PASS on the `1.30` tree; FAIL on a planted bad
-  board (stale `startUntil` + unknown status + bad `repeat` unit).
 
 ### v1.27 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.27)
 - **Completed column: most-recently-completed on top.** A task that's just been

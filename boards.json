@@ -1,13 +1,7 @@
 {
     "default": "adults",
     "boards": [
-        {
-            "key": "adults",
-            "name": "Adults"
-        },
-        {
-            "key": "children",
-            "name": "Children"
-        }
+        { "key": "adults",   "name": "Adults" },
+        { "key": "children", "name": "Children" }
     ]
 }

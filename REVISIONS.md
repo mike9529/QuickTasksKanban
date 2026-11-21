@@ -3,34 +3,6 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
-## v1.30 — 2026-11-20 (RELEASED on GitHub, tag v1.30)
-A data + guard release. No app-code change — the board behaves exactly as v1.29;
-this makes the *repo* trustworthy as a fresh-pull artifact.
-
-### Data sync — committed data now matches the live schema
-- `boards/adults.json` + `boards/children.json` refreshed from the frozen v1.1
-  demo snapshot to the current dev data, which carries the `canStartOnUTC` +
-  `repeat` fields (the recurring-task schema from v1.2 / v1.25 / v1.26). The
-  committed data now has the same shape the app produces today, so a fresh clone
-  loads the current schema on first boot. Pure data refresh — no config or code
-  change.
-
-### Removed the dead `tasks.json`
-- The flat single-board `tasks.json` was removed. Nothing reads it: the live API
-  loads `boards/<key>.json`, and the static (GitHub Pages) fallback loads
-  `boards.json` + `boards/<key>.json`. It was a leftover.
-
-### Fresh-load guard (`scripts/fresh_load_check.php` + `.github/workflows/fresh-load.yml`)
-- A read-only check that mirrors a cold start: every data file valid JSON, the
-  registry exposes its boards, each config merges over `DEFAULT_CONFIG` with all
-  required keys, no task carries the renamed `startUntil`, every `repeat` is a
-  sane `{every,unit[,at]}` (or null), and `api.php` passes `php -l`.
-- Runs on **every push / PR to `main`** (PHP 8.4 via `shivammathur/setup-php`),
-  so a bad schema or data commit fails the build instead of shipping a broken
-  fresh pull. Also runnable locally: `php scripts/fresh_load_check.php .`.
-- Verified: PASS on the v1.30 tree; FAIL on a planted bad board (stale
-  `startUntil` + unknown status + bad `repeat` unit).
-
 ## v1.29 — 2026-11-19 (RELEASED on dev + staging + GitHub, tag v1.29)
 Two features plus one bug fix, all in the InProgress/Completed area of the board.
 
