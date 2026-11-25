@@ -1,3 +1,32 @@
+QuickTasks — Version 1.35
+Date: 2026-11-25
+Status: SHIPPED to GitHub (tag v1.35). Final fix for the iPhone drag-and-drop
+        status change: the "scroll back to the top" helper that fires when a card
+        is pulled out of Pending is now gated to full-browser only, so a phone
+        drag is no longer yanked to the top (the device's own edge auto-scroll
+        handles it instead). Code-only; no data change.
+
+--------------------------------------------------------------------------------
+v1.35 changes (vs v1.34):
+--------------------------------------------------------------------------------
+  FIX — don't auto-scroll-to-top on a small/touch viewport:
+     - When a card is dragged out of Pending, the page auto-scrolls smoothly back
+       to the top so the other buckets are visible for the drop. That is a useful
+       convenience on a FULL BROWSER (columns stack tall, buckets go off-screen),
+       but on an iPhone it fights the device's own edge auto-scroll: the moment
+       the card leaves Pending the page jumped to the top, forcing the user to
+       scroll back down to find In Progress.
+     - The `dragover` watcher that triggers startAutoScrollToTop() now runs only
+       when isFullBrowser() is true (window.innerWidth > 900, the wide
+       side-by-side layout). Below that the forced scroll-to-top is skipped, so
+       the device's native edge auto-scroll does the work.
+     - Verified: at 1280px leaving the source column smooth-scrolls to the top;
+       at 390px it does not.
+
+  FILES: index.html only (isFullBrowser() gate on the dragover scroll-to-top
+  watcher). No api.php / admin.html / css change. Production boards/*.json are
+  production-only and are not carried in this repo.
+
 QuickTasks — Version 1.34
 Date: 2026-11-21
 Status: SHIPPED to GitHub (tag v1.34). Bug fix to the v1.32/v1.33 bonus feature:

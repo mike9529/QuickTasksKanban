@@ -145,6 +145,14 @@
     let activeSourceCol = null;
     let leftSource = false;
 
+    // A "full browser" is the wide, side-by-side layout (> 900px, where the
+    // columns sit tall and off-screen buckets need the scroll-to-top helper).
+    // Below that (an iPhone / small viewport) the device auto-scrolls, so the
+    // forced scroll-to-top must stay off.
+    function isFullBrowser() {
+      return window.innerWidth > 900;
+    }
+
     function startAutoScrollToTop() {
       // A scroll is already running -- leave it; it will finish to the top.
       if (scrollRAF) return;
@@ -171,13 +179,21 @@
 
     document.addEventListener("dragover", (e) => {
       if (!activeSourceCol || leftSource) return;
-      const r = activeSourceCol.getBoundingClientRect();
-      const inside =
-        e.clientX >= r.left && e.clientX <= r.right &&
-        e.clientY >= r.top  && e.clientY <= r.bottom;
-      if (!inside) {
-        leftSource = true;                 // highlight of the source just left
-        startAutoScrollToTop();
+      // The smooth scroll-to-top is a FULL-BROWSER convenience: on a wide layout
+      // the columns stack tall and the other buckets can be off-screen, so when
+      // the dragged card leaves the source column we bring them into view. On a
+      // small/touch viewport (an iPhone) the device auto-scrolls as the finger
+      // nears an edge, so we must NOT force a scroll-to-top here -- doing so yanks
+      // the board up and the user has to scroll back down to find In Progress.
+      if (isFullBrowser()) {
+        const r = activeSourceCol.getBoundingClientRect();
+        const inside =
+          e.clientX >= r.left && e.clientX <= r.right &&
+          e.clientY >= r.top  && e.clientY <= r.bottom;
+        if (!inside) {
+          leftSource = true;                 // highlight of the source just left
+          startAutoScrollToTop();
+        }
       }
     });
     // -----------------------------------------------------------------------

@@ -3,6 +3,25 @@
 Changelog for the QuickTasks Kanban board. Keep this in sync with `VERSION` and the
 GitHub README "Revisions" section.
 
+## v1.35 — 2026-11-25 (DEV, not yet released)
+Gates the drag "scroll back to top" helper to full-browser only, so a phone drag
+isn't yanked to the top.
+
+### Fix — don't auto-scroll-to-top on a small/touch viewport
+- **The issue:** when a card is dragged out of Pending, the page auto-scrolls
+  smoothly back to the top so the other buckets are visible for the drop. That's
+  a useful convenience on a *full browser* (columns stack tall, buckets go
+  off-screen), but on an *iPhone* it fights the device's own edge auto-scroll:
+  the moment the card leaves Pending the page jumps to the top, forcing the user
+  to scroll back down to find In Progress.
+- **The fix:** the `dragover` watcher that triggers `startAutoScrollToTop()` now
+  runs only when `isFullBrowser()` is true (`window.innerWidth > 900`, the wide
+  side-by-side layout). Below that, the forced scroll-to-top is skipped, leaving
+  the device's native edge auto-scroll to do the work.
+- **Verified:** at 1280 px, leaving the source column smooth-scrolls to the top
+  (400 -> 0); at 390 px it does NOT scroll (stays put, device auto-scrolls
+  instead).
+
 ## v1.34 — 2026-11-21 (RELEASED on GitHub, tag v1.34)
 Bug fix to the v1.32/v1.33 bonus feature: the post-goal prize ladder was
 **linear**, so every award cost the same and the difficulty never escalated.
